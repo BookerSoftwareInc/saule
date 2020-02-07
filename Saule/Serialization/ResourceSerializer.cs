@@ -3,7 +3,6 @@ using System.Collections;
 using System.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Saule.Queries;
 using Saule.Queries.Fieldset;
 using Saule.Queries.Including;
 using Saule.Queries.Pagination;
@@ -294,10 +293,24 @@ namespace Saule.Serialization
                 .Where(a =>
                     node.SourceObject.IncludesProperty(_propertyNameConverter.ToModelPropertyName(a.InternalName)))
                 .Select(a =>
-                    new
                     {
-                        Key = _propertyNameConverter.ToJsonPropertyName(a.InternalName),
-                        Value = node.SourceObject.GetValueOfProperty(_propertyNameConverter.ToModelPropertyName(a.InternalName))
+                        object value = node.SourceObject.GetValueOfProperty(_propertyNameConverter.ToModelPropertyName(a.InternalName));
+
+                        var jsonConverters = node.SourceObject.GetType().GetProperties().Where(prop => prop.Name == _propertyNameConverter.ToModelPropertyName(a.InternalName))?
+                        .First().GetCustomAttributes(typeof(JsonConverterAttribute), true);
+
+                        if (jsonConverters != null && jsonConverters.Any())
+                        {
+                            var converters = jsonConverters.Select(converterAttr => (JsonConverter)Activator.CreateInstance(((JsonConverterAttribute)converterAttr).ConverterType));
+
+                             value = JsonConvert.SerializeObject(value, converters.ToArray());
+                        }
+
+                        return new
+                        {
+                            Key = _propertyNameConverter.ToJsonPropertyName(a.InternalName),
+                            Value = value
+                        };
                     })
                 .ToDictionary(
                     kvp => kvp.Key,
