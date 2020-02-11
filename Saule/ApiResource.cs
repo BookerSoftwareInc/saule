@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 using Humanizer;
+using Newtonsoft.Json;
 
 namespace Saule
 {
@@ -141,12 +142,13 @@ namespace Saule
         /// Specify an attribute of this resource.
         /// </summary>
         /// <param name="name">The name of the attribute.</param>
+        /// <param name="converters">Json converters.</param>
         /// <returns>The <see cref="ResourceAttribute"/>.</returns>
-        protected ResourceAttribute Attribute(string name)
+        protected ResourceAttribute Attribute(string name, IEnumerable<JsonConverter> converters = null)
         {
             VerifyPropertyName(name);
 
-            var result = new ResourceAttribute(name);
+            var result = new ResourceAttribute(name, converters);
 
             _attributes.Add(result);
 

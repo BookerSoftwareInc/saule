@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections;
 using System.Linq;
+
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Saule.Queries;
 using Saule.Queries.Fieldset;
 using Saule.Queries.Including;
 using Saule.Queries.Pagination;
@@ -297,7 +297,7 @@ namespace Saule.Serialization
                     new
                     {
                         Key = _propertyNameConverter.ToJsonPropertyName(a.InternalName),
-                        Value = GetValue(node, a.InternalName)
+                        Value = GetValue(node, a)
                     })
                 .ToDictionary(
                     kvp => kvp.Key,
@@ -315,7 +315,7 @@ namespace Saule.Serialization
                     new
                     {
                         Key = _propertyNameConverter.ToJsonPropertyName(a.InternalName),
-                        Value = GetValue(node, a.InternalName)
+                        Value = GetValue(node, a)
                     })
                 .ToDictionary(
                     kvp => kvp.Key,
@@ -427,23 +427,22 @@ namespace Saule.Serialization
             return @object;
         }
 
-        private object GetValue(ResourceGraphNode node, string internalName)
+        private object GetValue(ResourceGraphNode node, ResourceAttribute resourceAttribute)
         {
-            var value = node.SourceObject.GetValueOfProperty(_propertyNameConverter.ToModelPropertyName(internalName));
+            var value = node.SourceObject.GetValueOfProperty(_propertyNameConverter.ToModelPropertyName(resourceAttribute.InternalName));
 
-            var property = node.SourceObject.GetType().GetProperties()
-                .FirstOrDefault(prop => prop.Name == _propertyNameConverter.ToModelPropertyName(internalName));
-
-            var jsonConverters = property?.GetCustomAttributes(typeof(JsonConverterAttribute), true);
-
-            if (jsonConverters == null || !jsonConverters.Any())
+            if (resourceAttribute.JsonConverters == null || !resourceAttribute.JsonConverters.Any())
             {
                 return value;
             }
 
-            var converters = jsonConverters.Select(converterAttr => (JsonConverter)Activator.CreateInstance(((JsonConverterAttribute)converterAttr).ConverterType));
+            // Need to trim leading and trailing double quotes, serilization process adds them in the converter when it uses writevalue
+            value = JsonConvert.SerializeObject(value, new JsonSerializerSettings()
+            {
+                Converters = resourceAttribute.JsonConverters.ToArray()
+            })?.Trim(new char[] { '"' });
 
-            return JsonConvert.SerializeObject(value, converters.ToArray());
+            return value;
         }
     }
 }
