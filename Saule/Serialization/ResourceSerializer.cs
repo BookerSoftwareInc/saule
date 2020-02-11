@@ -297,7 +297,7 @@ namespace Saule.Serialization
                     new
                     {
                         Key = _propertyNameConverter.ToJsonPropertyName(a.InternalName),
-                        Value = node.SourceObject.GetValueOfProperty(_propertyNameConverter.ToModelPropertyName(a.InternalName))
+                        Value = GetValue(node, a.InternalName)
                     })
                 .ToDictionary(
                     kvp => kvp.Key,
@@ -315,7 +315,7 @@ namespace Saule.Serialization
                     new
                     {
                         Key = _propertyNameConverter.ToJsonPropertyName(a.InternalName),
-                        Value = node.SourceObject.GetValueOfProperty(_propertyNameConverter.ToModelPropertyName(a.InternalName))
+                        Value = GetValue(node, a.InternalName)
                     })
                 .ToDictionary(
                     kvp => kvp.Key,
@@ -425,6 +425,25 @@ namespace Saule.Serialization
             @object.Add(name, new Uri(start, path.EnsureEndsWith("/")));
 
             return @object;
+        }
+
+        private object GetValue(ResourceGraphNode node, string internalName)
+        {
+            var value = node.SourceObject.GetValueOfProperty(_propertyNameConverter.ToModelPropertyName(internalName));
+
+            var property = node.SourceObject.GetType().GetProperties()
+                .FirstOrDefault(prop => prop.Name == _propertyNameConverter.ToModelPropertyName(internalName));
+
+            var jsonConverters = property?.GetCustomAttributes(typeof(JsonConverterAttribute), true);
+
+            if (jsonConverters == null || !jsonConverters.Any())
+            {
+                return value;
+            }
+
+            var converters = jsonConverters.Select(converterAttr => (JsonConverter)Activator.CreateInstance(((JsonConverterAttribute)converterAttr).ConverterType));
+
+            return JsonConvert.SerializeObject(value, converters.ToArray());
         }
     }
 }
