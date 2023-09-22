@@ -40,6 +40,13 @@
     <CodeAnalysisRuleSet>..\StyleCop.Analyzers.ruleset</CodeAnalysisRuleSet>
     <CodeAnalysisIgnoreGeneratedCode>true</CodeAnalysisIgnoreGeneratedCode>
   </PropertyGroup>
+  <PropertyGroup>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="LICENSE" Pack="true" PackagePath="LICENSE"/>
+  </ItemGroup>
   <ItemGroup>
     <Reference Include="Humanizer, Version=2.6.0.0, Culture=neutral, PublicKeyToken=979442b78dfc278e, processorArchitecture=MSIL">
       <HintPath>..\packages\Humanizer.Core.2.6.2\lib\netstandard2.0\Humanizer.dll</HintPath>
