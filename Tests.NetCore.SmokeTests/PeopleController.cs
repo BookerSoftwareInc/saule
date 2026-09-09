@@ -1,5 +1,7 @@
+using System.Linq;
 using Microsoft.AspNetCore.Mvc;
 using Saule.Http;
+using Saule.Queries;
 
 namespace Tests.NetCore.SmokeTests
 {
@@ -43,6 +45,38 @@ namespace Tests.NetCore.SmokeTests
         public Person Throws()
         {
             throw new System.InvalidOperationException("boom");
+        }
+
+        // Confirms JsonApiQueryValueProvider's bracket-to-PascalCase key normalization actually
+        // reaches [ApiController] model binding (#2/#12 PR review fix) - without
+        // IBindingSourceValueProvider, CompositeValueProvider.Filter drops the provider entirely
+        // under [ApiController], so filter[min-age] would never bind to PersonFilter.MinAge.
+        [HttpGet("filtered")]
+        public IActionResult GetFiltered([FromQuery] PersonFilter filter)
+        {
+            return Ok(new { filter.MinAge });
+        }
+
+        // Confirms a [HandlesQuery] action with a QueryContext parameter does not require a request
+        // body/Content-Type under [ApiController] (#13 PR review fix) - without a non-Body binding
+        // source for QueryContext, UnsupportedContentTypeFilter/ModelStateInvalidFilter would
+        // short-circuit this GET request before HandlesQueryAttribute ever runs.
+        [HttpGet("handled")]
+        [HandlesQueryAttribute]
+        public IActionResult GetHandled(QueryContext queryContext)
+        {
+            var hasNameFilter = queryContext.Filter?.Properties.Any(p => p.Name == "Name") ?? false;
+            return Ok(new { hasNameFilter });
+        }
+
+        // Confirms a malformed JSON:API request body produces a 400, not a 500 (#7 PR review fix) -
+        // JsonApiInputFormatter throws BadHttpRequestException for invalid JSON, which
+        // JsonApiExceptionFilter must surface via BadHttpRequestException.StatusCode rather than
+        // forcing every exception to Status500InternalServerError.
+        [HttpPost]
+        public IActionResult Post([FromBody] Person person)
+        {
+            return Ok(person);
         }
     }
 }

@@ -105,6 +105,43 @@ namespace Tests.NetCore.SmokeTests
             Assert.Contains("An error has occurred.", body);
         }
 
+        [Fact]
+        public async Task Get_WithBracketedFilterQueryString_BindsToActionParameter()
+        {
+            // #2/#12 PR review fix: filter[min-age] must normalize to MinAge and still reach
+            // model binding under [ApiController].
+            var response = await _client.GetAsync("/people/filtered?filter[min-age]=21");
+            var body = await response.Content.ReadAsStringAsync();
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Contains("\"minAge\":21", body);
+        }
+
+        [Fact]
+        public async Task Get_HandlesQueryAction_WithNoBodyOrContentType_Succeeds()
+        {
+            // #13 PR review fix: a QueryContext action parameter must not force [ApiController] to
+            // require a request body for a plain GET.
+            var response = await _client.GetAsync("/people/handled?filter[name]=Alice");
+            var body = await response.Content.ReadAsStringAsync();
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Contains("\"hasNameFilter\":true", body);
+        }
+
+        [Fact]
+        public async Task Post_MalformedJsonApiBody_Returns400NotInternalServerError()
+        {
+            // #7 PR review fix: JsonApiInputFormatter's BadHttpRequestException must surface its own
+            // StatusCode through JsonApiExceptionFilter, not the filter's hardcoded 500.
+            var request = CreateJsonApiRequest(HttpMethod.Post, "/people");
+            request.Content = new StringContent("{ not valid json", System.Text.Encoding.UTF8, "application/vnd.api+json");
+
+            var response = await _client.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
         private static HttpRequestMessage CreateJsonApiRequest(HttpMethod method, string url)
         {
             var request = new HttpRequestMessage(method, url);

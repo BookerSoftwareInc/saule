@@ -83,6 +83,20 @@ jobs:
         packageType: 'sdk'
         version: '10.0.x'
 
+    # PR review finding (#4): /p:RestorePackagesConfig=true combined into the same /t:Restore,Build
+    # MSBuild invocation below does NOT work for the legacy packages.config project (Tests.csproj) -
+    # a single MSBuild invocation evaluates the project (resolving its ..\packages\...\*.targets
+    # imports via Exists() conditions) once, before any target - including Restore - runs. So on a
+    # clean agent, Tests.csproj's EnsureNuGetPackageBuildImports/hard <Error> still fires because the
+    # packages aren't on disk yet at evaluation time, even though Restore later succeeds. A genuinely
+    # separate restore step, in its own process, is required so evaluation happens again afterward.
+    - task: NuGetCommand@2
+      name: RestorePackagesConfig
+      displayName: 'Restore packages.config packages'
+      inputs:
+        command: 'restore'
+        restoreSolution: 'Saule.sln'
+
     # Builds the whole solution (Saule.csproj's 3 TFMs, the legacy packages.config-based
     # Tests.csproj, and the SDK-style Tests.NetCore.SmokeTests.csproj) via full MSBuild in one
     # step - the same command this migration was actually verified with locally
@@ -90,18 +104,12 @@ jobs:
     # (as the original single-project pipeline this was cloned from used) cannot restore or build
     # Tests.csproj at all, since `dotnet restore`/`dotnet build` don't handle packages.config-style
     # legacy projects - confirmed as a real gap in this pipeline before this fix, not assumed.
-    # PR review finding: /t:Restore alone does not opt legacy packages.config projects (Tests.csproj)
-    # into package restore - MSBuild's Restore target only handles PackageReference-style restore by
-    # default. Without RestorePackagesConfig=true, Tests.csproj's hard ..\packages\... HintPaths and
-    # its EnsureNuGetPackageBuildImports target (which fails the build if those imports are missing)
-    # only happen to work on an agent whose ..\packages\ cache was already populated some other way -
-    # a clean agent would fail here before any test runs.
     - task: VSBuild@1
       name: RestoreAndBuild
       displayName: 'Restore and build solution'
       inputs:
         solution: 'Saule.sln'
-        msbuildArgs: '/t:Restore,Build /p:Configuration=Release /p:RestorePackagesConfig=true'
+        msbuildArgs: '/t:Restore,Build /p:Configuration=Release'
         platform: 'Any CPU'
         configuration: 'Release'
 
@@ -125,7 +133,14 @@ jobs:
                     [string]$packageVersion = $($Matches.1) + '.' + $($Matches.2) + '.' + $($Matches.3);
                     if (-not [System.Convert]::ToBoolean("$(isReleaseBranch)"))
                     {
-                        $packageVersion = $packageVersion + '-beta';
+                        # PR review finding (#3): Saule.csproj's <Version> is a hand-bumped literal, so
+                        # every build on the same version produced the exact same "-beta" package
+                        # version - combined with allowPackageConflicts:true on the Push step below,
+                        # every build after the first silently pushed nothing new behind a green
+                        # checkmark. Appending the build ID makes every beta package unique without
+                        # requiring a csproj edit for every commit; a stable (non-beta) release still
+                        # requires bumping <Version> before merging, same as before.
+                        $packageVersion = $packageVersion + '-beta.$(Build.BuildId)';
                     }
 
                     Write-Host "##vso[build.updatebuildnumber]$packageVersion"

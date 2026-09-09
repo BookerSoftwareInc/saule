@@ -16,4 +16,9 @@ namespace Tests.NetCore.SmokeTests
             Attribute(nameof(Person.Name));
         }
     }
+
+    public class PersonFilter
+    {
+        public int MinAge { get; set; }
+    }
 }

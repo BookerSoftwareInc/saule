@@ -56,16 +56,27 @@ namespace Saule.Http
             // (classic Web API's "An error has occurred."); net10.0 has no equivalent built-in gate,
             // so this filter applies its own policy instead - JsonApiConfiguration.
             // IncludeExceptionDetailInErrors, defaulting to false, gates both Title and Detail.
+            // PR review finding: BadHttpRequestException (e.g. JsonApiInputFormatter's malformed-body
+            // 400) already carries its own client-error StatusCode - forcing every exception to 500
+            // here discarded that and turned a client error into a server error. Its Message is
+            // always a client-safe, purpose-written string (never raw exception detail), so it is
+            // shown regardless of IncludeExceptionDetailInErrors, same as net47's
+            // HttpResponseException(400) was never subject to IncludeErrorDetailPolicy either.
+            var badRequest = context.Exception as BadHttpRequestException;
+            var statusCode = badRequest?.StatusCode ?? StatusCodes.Status500InternalServerError;
+
             var problemDetails = new ProblemDetails
             {
-                Title = _config.IncludeExceptionDetailInErrors ? context.Exception.Message : "An error has occurred.",
+                Title = badRequest != null
+                    ? badRequest.Message
+                    : (_config.IncludeExceptionDetailInErrors ? context.Exception.Message : "An error has occurred."),
                 Detail = _config.IncludeExceptionDetailInErrors ? context.Exception.ToString() : null,
-                Status = StatusCodes.Status500InternalServerError,
+                Status = statusCode,
             };
 
             var objectResult = new ObjectResult(problemDetails)
             {
-                StatusCode = StatusCodes.Status500InternalServerError,
+                StatusCode = statusCode,
             };
 
             // A result substituted by an exception filter bypasses the normal result-filter pipeline

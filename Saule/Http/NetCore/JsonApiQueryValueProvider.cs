@@ -16,7 +16,7 @@ namespace Saule.Http
     /// <see cref="IQueryCollection"/> pairs, unlike net47's raw query string, so no manual parsing
     /// is needed here (compare to the portable UriExtensions.ParseQueryNameValuePairs()).
     /// </summary>
-    internal sealed class JsonApiQueryValueProvider : IValueProvider
+    internal sealed class JsonApiQueryValueProvider : IValueProvider, IBindingSourceValueProvider
     {
         private readonly IQueryCollection _query;
         private readonly CultureInfo _culture;
@@ -40,6 +40,16 @@ namespace Saule.Http
         public bool ContainsPrefix(string prefix)
         {
             return _prefixContainer.ContainsPrefix(prefix);
+        }
+
+        // PR review finding: without IBindingSourceValueProvider, CompositeValueProvider.Filter (run
+        // whenever ModelMetadata.BindingSource != null - i.e. always under [ApiController]) drops this
+        // provider entirely, since it keeps only providers that implement this interface. That made
+        // every [FromQuery]/query-bound action parameter relying on JSON:API's kebab-case-to-PascalCase
+        // conversion (e.g. filter[min-age]) silently unbindable under [ApiController].
+        public IValueProvider Filter(BindingSource bindingSource)
+        {
+            return bindingSource.CanAcceptDataFrom(BindingSource.Query) ? this : null;
         }
 
         public ValueProviderResult GetValue(string key)

@@ -73,6 +73,11 @@ namespace Saule.Http
                 options.Filters.Add(new JsonApiResultFilter(jsonApiConfiguration));
                 options.ValueProviderFactories.Add(new JsonApiQueryValueProviderFactory());
 
+                // PR review finding (#13): gives every QueryContext-typed action parameter a
+                // non-Body binding source, so [ApiController] doesn't require a request body for
+                // actions that use [HandlesQuery] (see QueryContextParameterConvention).
+                options.Conventions.Add(new QueryContextParameterConvention());
+
                 var outputFormatter = new JsonApiOutputFormatter(jsonApiConfiguration);
                 var inputFormatter = new JsonApiInputFormatter(jsonApiConfiguration);
 
