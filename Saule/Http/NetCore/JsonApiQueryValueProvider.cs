@@ -20,20 +20,26 @@ namespace Saule.Http
     {
         private readonly IQueryCollection _query;
         private readonly CultureInfo _culture;
+        private readonly PrefixContainer _prefixContainer;
 
         internal JsonApiQueryValueProvider(IQueryCollection query, CultureInfo culture)
         {
             _query = query;
             _culture = culture;
+
+            // PR review finding: a naive `NormalizeKey(k).StartsWith(prefix)` is broader than
+            // IValueProvider.ContainsPrefix's real contract - MVC's own prefix matching only accepts
+            // an exact key or one followed by a delimiter ('.'/'[') after the prefix, so a key
+            // normalized to "FilterExtra" must not satisfy prefix "Filter" (false positives can bind
+            // or create complex model properties from unrelated query parameters). PrefixContainer is
+            // the framework's own implementation of that exact rule (used by QueryStringValueProvider
+            // itself), applied here over the normalized keys.
+            _prefixContainer = new PrefixContainer(_query.Keys.Select(NormalizeKey).ToArray());
         }
 
         public bool ContainsPrefix(string prefix)
         {
-            // NameValuePairsValueProvider (net47's base class) uses actual prefix matching, not
-            // exact equality - needed for complex/nested model binding (e.g. a [FromUri] filter
-            // object querying whether any key starts with "Filter."). Exact equality here would
-            // make such binding silently fail to see any of its properties.
-            return _query.Keys.Any(k => NormalizeKey(k).StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+            return _prefixContainer.ContainsPrefix(prefix);
         }
 
         public ValueProviderResult GetValue(string key)

@@ -23,6 +23,10 @@ trigger:
         - Tests/**
         - Tests.NetCore.SmokeTests/**
         - Saule.sln
+        # PR review finding: the repo-root global.json pins the .NET 10 SDK for every build (VSBuild@1's
+        # MSBuild SDK resolution and any `dotnet` invocation both read it), but it wasn't in this path
+        # filter - a PR that changes or breaks the pinned SDK version could skip this pipeline entirely.
+        - global.json
 
 pr:
   paths:
@@ -31,6 +35,7 @@ pr:
       - Tests/**
       - Tests.NetCore.SmokeTests/**
       - Saule.sln
+      - global.json
 
 pool: 'aws-booker-dev-win2025'
 
