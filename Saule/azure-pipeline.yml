@@ -85,12 +85,18 @@ jobs:
     # (as the original single-project pipeline this was cloned from used) cannot restore or build
     # Tests.csproj at all, since `dotnet restore`/`dotnet build` don't handle packages.config-style
     # legacy projects - confirmed as a real gap in this pipeline before this fix, not assumed.
+    # PR review finding: /t:Restore alone does not opt legacy packages.config projects (Tests.csproj)
+    # into package restore - MSBuild's Restore target only handles PackageReference-style restore by
+    # default. Without RestorePackagesConfig=true, Tests.csproj's hard ..\packages\... HintPaths and
+    # its EnsureNuGetPackageBuildImports target (which fails the build if those imports are missing)
+    # only happen to work on an agent whose ..\packages\ cache was already populated some other way -
+    # a clean agent would fail here before any test runs.
     - task: VSBuild@1
       name: RestoreAndBuild
       displayName: 'Restore and build solution'
       inputs:
         solution: 'Saule.sln'
-        msbuildArgs: '/t:Restore,Build /p:Configuration=Release'
+        msbuildArgs: '/t:Restore,Build /p:Configuration=Release /p:RestorePackagesConfig=true'
         platform: 'Any CPU'
         configuration: 'Release'
 

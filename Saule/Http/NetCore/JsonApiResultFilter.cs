@@ -109,21 +109,18 @@ namespace Saule.Http
 
         /// <summary>
         /// Shared by <see cref="ProcessResult"/> (via the <c>requiresMediaType</c> gate) and
-        /// <see cref="JsonApiOutputFormatter.CanWriteResult"/>. An Accept-header-only check is too
-        /// strict: a plain client call to a real <c>[ReturnsResourceAttribute]</c> action with no
-        /// explicit <c>Accept</c> header (a very common case) would otherwise be wrongly treated as
-        /// "not JSON:API". The reliable signal is whether <c>ReturnsResourceAttribute</c> actually
-        /// ran for this action (it always runs before the action body, so it's already set even if
-        /// the action later throws - see <see cref="JsonApiExceptionFilter"/>) - Accept-header
-        /// matching is only the fallback for actions with no such attribute at all.
+        /// <see cref="JsonApiOutputFormatter.CanWriteResult"/>. PR review finding: this used to also
+        /// return true whenever <c>[ReturnsResourceAttribute]</c> had attached a descriptor, even with
+        /// no Accept header or one that explicitly asked for something else. net47's actual, real
+        /// contract (<c>JsonApiProcessor.ProcessRequest</c>'s <c>hasMediaType</c> check, proven by
+        /// <c>Tests/Integration/ContentNegotiationTests.cs</c>'s <c>MustNotReturnJsonApiResponse</c>)
+        /// is Accept-header-only for this gate - a <c>[ReturnsResourceAttribute]</c>-only action called
+        /// with no Accept header gets a plain response, not a forced JSON:API one; only an explicit
+        /// <c>application/vnd.api+json</c> Accept header, or the <c>[JsonApi]</c> attribute forcing it
+        /// unconditionally (handled separately, via <c>requiresMediaType: false</c>), produces one.
         /// </summary>
         internal static bool ShouldProcessAsJsonApi(HttpContext httpContext, System.Net.Http.HttpRequestMessage shimRequest)
         {
-            if (shimRequest.Properties.ContainsKey(Constants.PropertyNames.ResourceDescriptor))
-            {
-                return true;
-            }
-
             var accept = httpContext.Request.GetTypedHeaders().Accept;
             return accept != null && accept.Any(a => a.MediaType == Constants.MediaType);
         }

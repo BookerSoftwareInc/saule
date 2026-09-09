@@ -33,13 +33,13 @@ namespace Saule.Http
             // exact equality - needed for complex/nested model binding (e.g. a [FromUri] filter
             // object querying whether any key starts with "Filter."). Exact equality here would
             // make such binding silently fail to see any of its properties.
-            return _query.Keys.Any(k => k.ToPascalCase().StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+            return _query.Keys.Any(k => NormalizeKey(k).StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
         }
 
         public ValueProviderResult GetValue(string key)
         {
             var matches = _query
-                .Where(p => string.Equals(p.Key.ToPascalCase(), key, StringComparison.OrdinalIgnoreCase))
+                .Where(p => string.Equals(NormalizeKey(p.Key), key, StringComparison.OrdinalIgnoreCase))
                 .SelectMany(p => p.Value.ToArray())
                 .Where(v => v != null)
                 .ToArray();
@@ -52,6 +52,17 @@ namespace Saule.Http
             // A repeated key (?sort=a&sort=b) must bind as multiple StringValues entries, not one
             // comma-joined string, or an array/list-bound parameter only ever sees one element.
             return new ValueProviderResult(new StringValues(matches), _culture);
+        }
+
+        // PR review finding: net47's provider gets bracket-normalized keys from
+        // GetQueryNameValuePairs() (filter[location] -> filter.location) before ToPascalCase() ever
+        // runs; IQueryCollection here still has raw bracket notation. ToPascalCase() alone treats
+        // "[" and "]" as ordinary characters, not separators, so "filter[location]" became
+        // "Filter[location]" - never matching a bound property path like "Filter.Location". Normalize
+        // brackets to dots first, exactly like the portable UriExtensions.ParseQueryNameValuePairs().
+        private static string NormalizeKey(string key)
+        {
+            return key.Replace("[", ".").Replace("]", string.Empty).ToPascalCase();
         }
     }
 }

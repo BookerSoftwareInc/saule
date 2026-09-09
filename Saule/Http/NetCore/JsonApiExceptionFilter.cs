@@ -47,15 +47,18 @@ namespace Saule.Http
                 return;
             }
 
-            // PR review finding: unconditionally exposing the full exception (stack trace, inner
-            // exception messages) to the client is an information-disclosure risk in production. On
-            // net47 this was never an issue because Web API's own IncludeErrorDetailPolicy (local-only
-            // by default) stripped HttpError.StackTrace before it ever reached Saule; net10.0 has no
-            // equivalent built-in gate, so this filter applies its own policy instead -
-            // JsonApiConfiguration.IncludeExceptionDetailInErrors, defaulting to false.
+            // PR review finding: unconditionally exposing the exception (message, stack trace, inner
+            // exception messages) to the client is an information-disclosure risk in production -
+            // exception messages commonly carry SQL, paths, or other internal details, and Title was
+            // still leaking the raw message even after Detail was gated. On net47 this was never an
+            // issue because Web API's own IncludeErrorDetailPolicy (local-only by default) stripped
+            // HttpError's detail before it ever reached Saule, falling back to a generic message
+            // (classic Web API's "An error has occurred."); net10.0 has no equivalent built-in gate,
+            // so this filter applies its own policy instead - JsonApiConfiguration.
+            // IncludeExceptionDetailInErrors, defaulting to false, gates both Title and Detail.
             var problemDetails = new ProblemDetails
             {
-                Title = context.Exception.Message,
+                Title = _config.IncludeExceptionDetailInErrors ? context.Exception.Message : "An error has occurred.",
                 Detail = _config.IncludeExceptionDetailInErrors ? context.Exception.ToString() : null,
                 Status = StatusCodes.Status500InternalServerError,
             };
