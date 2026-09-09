@@ -1,7 +1,7 @@
 trigger:
   branches:
     include:
-      - master
+      - booker-saule
       - develop
       # Saule's actual release branches are dash-named (release-v1.4, release-v1.5, release-v1.6 -
       # confirmed via `git branch -a` and the removed appveyor.yml's own `/(master|release-v.+)/`

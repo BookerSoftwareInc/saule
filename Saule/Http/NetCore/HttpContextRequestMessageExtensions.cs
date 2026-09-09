@@ -31,11 +31,18 @@ namespace Saule.Http
 
             if (request.Headers.TryGetValue("Accept", out var acceptValues))
             {
-                foreach (var value in acceptValues)
+                foreach (var raw in acceptValues)
                 {
-                    if (MediaTypeWithQualityHeaderValue.TryParse(value, out var accept))
+                    // A single Accept header line is often comma-separated (e.g.
+                    // "application/vnd.api+json, text/html") - TryParse only understands one media
+                    // type at a time, so the whole line must be split before parsing each entry, or
+                    // it silently fails to parse and the value is dropped.
+                    foreach (var value in raw.Split(','))
                     {
-                        message.Headers.Accept.Add(accept);
+                        if (MediaTypeWithQualityHeaderValue.TryParse(value.Trim(), out var accept))
+                        {
+                            message.Headers.Accept.Add(accept);
+                        }
                     }
                 }
             }

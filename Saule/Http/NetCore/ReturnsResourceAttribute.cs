@@ -42,9 +42,11 @@ namespace Saule.Http
         {
             var request = context.HttpContext.Request;
 
-            var accept = request.Headers.Accept
-                .Select(h => MediaTypeHeaderValue.TryParse(h, out var parsed) ? parsed : null)
-                .Where(a => a != null && a.MediaType == Constants.MediaType)
+            // request.Headers.Accept holds raw, potentially comma-separated header strings - a
+            // single line can carry multiple media types, which a naive per-value TryParse would
+            // miss. GetTypedHeaders().Accept is the framework's own already-split/parsed list.
+            var accept = (request.GetTypedHeaders().Accept ?? Enumerable.Empty<MediaTypeHeaderValue>())
+                .Where(a => a.MediaType == Constants.MediaType)
                 .ToList();
             if (accept.Count > 0 && accept.All(a => a.Parameters.Any()))
             {

@@ -23,7 +23,7 @@ namespace Saule.Http
         {
             if (context.Exception != null)
             {
-                throw context.Exception;
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(context.Exception).Throw();
             }
 
             if (context.Result is ObjectResult objectResult)
