@@ -19,7 +19,13 @@ namespace Saule.Http
             {
                 foreach (var value in query[key])
                 {
-                    yield return new KeyValuePair<string, string>(key, value);
+                    // PR review finding: the shared Saule.Queries.* contexts expect the net47
+                    // UriExtensions.ParseQueryNameValuePairs() normalization (page[number] ->
+                    // page.number) - without it, bracketed keys never match Constants.QueryNames'
+                    // dotted form and pagination/filter/fields lookups silently no-op.
+                    yield return new KeyValuePair<string, string>(
+                        key.Replace("[", ".").Replace("]", string.Empty),
+                        value);
                 }
             }
         }

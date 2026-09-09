@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -30,10 +31,32 @@ namespace Saule.Http
         /// <inheritdoc/>
         public void OnException(ExceptionContext context)
         {
+            // PR review finding: this filter is registered globally (MvcBuilderExtensions.cs), so it
+            // used to run - and unconditionally set context.Result/ExceptionHandled - for every
+            // unhandled exception in the whole app, not just JSON:API actions. Merely calling
+            // ConfigureJsonApi() was silently swallowing exceptions from ordinary, non-JSON:API
+            // endpoints and replacing the app's own exception handling (middleware, other filters,
+            // the dev exception page) with a bare 500. Only handle it here if the action was actually
+            // JSON:API - either explicitly opted in via [JsonApi]/[ReturnsResourceAttribute], or the
+            // client asked for it via Accept header (ShouldProcessAsJsonApi's own fallback).
+            var shimRequest = context.HttpContext.GetOrCreateShimRequestMessage();
+            var isExplicitJsonApi = context.Filters.OfType<JsonApiAttribute>().Any();
+
+            if (!isExplicitJsonApi && !JsonApiResultFilter.ShouldProcessAsJsonApi(context.HttpContext, shimRequest))
+            {
+                return;
+            }
+
+            // PR review finding: unconditionally exposing the full exception (stack trace, inner
+            // exception messages) to the client is an information-disclosure risk in production. On
+            // net47 this was never an issue because Web API's own IncludeErrorDetailPolicy (local-only
+            // by default) stripped HttpError.StackTrace before it ever reached Saule; net10.0 has no
+            // equivalent built-in gate, so this filter applies its own policy instead -
+            // JsonApiConfiguration.IncludeExceptionDetailInErrors, defaulting to false.
             var problemDetails = new ProblemDetails
             {
                 Title = context.Exception.Message,
-                Detail = context.Exception.ToString(),
+                Detail = _config.IncludeExceptionDetailInErrors ? context.Exception.ToString() : null,
                 Status = StatusCodes.Status500InternalServerError,
             };
 
@@ -46,11 +69,9 @@ namespace Saule.Http
             // entirely in ASP.NET Core - JsonApiResultFilter never runs for it (confirmed: without
             // this direct call, the built-in [ApiController] problem-details formatter served this
             // response as application/problem+json instead). Process it directly here instead of
-            // relying on the filter pipeline. requiresMediaType: true, same as the normal
-            // globally-registered path - only convert this into a JSON:API errors document if the
-            // action that threw was actually a JSON:API one ([ReturnsResourceAttribute] already ran
-            // before the action body, so its descriptor is still attached even though it threw).
-            JsonApiResultFilter.ProcessResult(context.HttpContext, objectResult, _config, requiresMediaType: true);
+            // relying on the filter pipeline. requiresMediaType: false - we've already established
+            // above (isExplicitJsonApi || ShouldProcessAsJsonApi) that this request is JSON:API.
+            JsonApiResultFilter.ProcessResult(context.HttpContext, objectResult, _config, requiresMediaType: false);
 
             context.Result = objectResult;
             context.ExceptionHandled = true;
