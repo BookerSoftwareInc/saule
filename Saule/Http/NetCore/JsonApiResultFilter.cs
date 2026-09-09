@@ -33,7 +33,13 @@ namespace Saule.Http
         {
             if (context.Result is ObjectResult objectResult)
             {
-                ProcessResult(context.HttpContext, objectResult, _config);
+                // requiresMediaType: true - this filter is registered globally (MvcBuilderExtensions.cs),
+                // exactly like net47's PreprocessingDelegatingHandler/JsonApiProcessor.ProcessRequest(...,
+                // requiresMediaType: true). Without this gate, every ObjectResult in the whole app -
+                // including endpoints that were never meant to be JSON:API - gets forced through this
+                // pipeline and fails with "You must add a [ReturnsResourceAttribute]" the moment a
+                // client's Accept header doesn't ask for application/vnd.api+json.
+                ProcessResult(context.HttpContext, objectResult, _config, requiresMediaType: true);
             }
 
             await next();
@@ -45,7 +51,16 @@ namespace Saule.Http
         /// registered globally via <c>ConfigureJsonApi</c> - same as net47's split between
         /// <c>PreprocessingDelegatingHandler</c> and <c>JsonApiAttribute</c>.
         /// </summary>
-        internal static void ProcessResult(HttpContext httpContext, ObjectResult objectResult, JsonApiConfiguration config)
+        /// <param name="httpContext">The current request's <see cref="HttpContext"/>.</param>
+        /// <param name="objectResult">The action's result, to be reshaped into a JSON:API document.</param>
+        /// <param name="config">The <see cref="JsonApiConfiguration"/> to preprocess/serialize with.</param>
+        /// <param name="requiresMediaType">
+        /// Mirrors net47's <c>JsonApiProcessor.ProcessRequest</c> parameter of the same name - true
+        /// for the globally-registered filter (only process requests that actually asked for
+        /// application/vnd.api+json), false for <see cref="JsonApiAttribute"/>'s explicit per-action
+        /// opt-in (net47's own <c>JsonApiAttribute</c> forces the format unconditionally too).
+        /// </param>
+        internal static void ProcessResult(HttpContext httpContext, ObjectResult objectResult, JsonApiConfiguration config, bool requiresMediaType)
         {
             var statusCode = objectResult.StatusCode ?? StatusCodes.Status200OK;
             if (statusCode >= 400 && statusCode < 500)
@@ -55,6 +70,13 @@ namespace Saule.Http
             }
 
             var request = httpContext.GetOrCreateShimRequestMessage();
+
+            if (requiresMediaType && !ShouldProcessAsJsonApi(httpContext, request))
+            {
+                return;
+            }
+
+
             var preprocessed = JsonApiRequestPreprocessor.PreprocessRequest(objectResult.Value, request, config);
 
             if (preprocessed.ErrorContent != null)
@@ -71,6 +93,39 @@ namespace Saule.Http
             // PreprocessResult).
             objectResult.ContentTypes.Clear();
             objectResult.ContentTypes.Add(Constants.MediaType);
+
+            // ObjectResult.Formatters (scoped to this one result) takes priority over the globally
+            // registered MvcOptions.OutputFormatters during content negotiation. Attaching the
+            // formatter here - not just relying on global registration - is what makes JsonApiAttribute
+            // self-sufficient on its own (net47's own JsonApiAttribute swaps in its own formatter
+            // instance directly for exactly this reason, independent of whether ConfigureJsonApi was
+            // ever called); it's a no-op for the globally-registered path since that formatter is
+            // already present in MvcOptions.OutputFormatters.
+            if (objectResult.Formatters.Count == 0)
+            {
+                objectResult.Formatters.Add(new JsonApiOutputFormatter(config));
+            }
+        }
+
+        /// <summary>
+        /// Shared by <see cref="ProcessResult"/> (via the <c>requiresMediaType</c> gate) and
+        /// <see cref="JsonApiOutputFormatter.CanWriteResult"/>. An Accept-header-only check is too
+        /// strict: a plain client call to a real <c>[ReturnsResourceAttribute]</c> action with no
+        /// explicit <c>Accept</c> header (a very common case) would otherwise be wrongly treated as
+        /// "not JSON:API". The reliable signal is whether <c>ReturnsResourceAttribute</c> actually
+        /// ran for this action (it always runs before the action body, so it's already set even if
+        /// the action later throws - see <see cref="JsonApiExceptionFilter"/>) - Accept-header
+        /// matching is only the fallback for actions with no such attribute at all.
+        /// </summary>
+        internal static bool ShouldProcessAsJsonApi(HttpContext httpContext, System.Net.Http.HttpRequestMessage shimRequest)
+        {
+            if (shimRequest.Properties.ContainsKey(Constants.PropertyNames.ResourceDescriptor))
+            {
+                return true;
+            }
+
+            var accept = httpContext.Request.GetTypedHeaders().Accept;
+            return accept != null && accept.Any(a => a.MediaType == Constants.MediaType);
         }
     }
 }

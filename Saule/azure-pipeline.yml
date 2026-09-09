@@ -11,22 +11,44 @@ trigger:
       - release-v*
   paths:
       include:
-        - Saule/*
+        # Re-fixed 2026-09-09 - flagged independently by a Copilot review AND a human reviewer
+        # (Otavio), the second with a sharper, more concrete framing than "too shallow": changes
+        # confined to Tests/, Tests.NetCore.SmokeTests/, or Saule.sln trigger no build and no tests
+        # at all, so a PR that breaks tests passes CI by simply never running it. This was reverted
+        # once already (matching Booker.ApplicationInsights' own shallow `*` convention), but two
+        # independent reviewers agreeing, with the human reviewer's sharper framing, outweighs
+        # matching a precedent that may carry the same latent gap. Includes the two sibling test
+        # projects and the solution file explicitly, not just Saule/**.
+        - Saule/**
+        - Tests/**
+        - Tests.NetCore.SmokeTests/**
+        - Saule.sln
 
 pr:
   paths:
     include:
-      - Saule/*
+      - Saule/**
+      - Tests/**
+      - Tests.NetCore.SmokeTests/**
+      - Saule.sln
 
 pool: 'aws-booker-dev-win2025'
 
 variables:
   - name: projectName
     value: "Saule/Saule.csproj"
-  - name: isMasterBranch
-    value: $[eq(variables['Build.SourceBranch'], 'refs/heads/master')]
+  # Fixed 2026-09-09 (PR review): this used to check refs/heads/master, which the trigger above
+  # never builds (booker-saule/develop/release-v* only) - isMasterBranch was always false, so the
+  # "-beta" suffix below never dropped and no stable package could ever be produced, and
+  # isPublishBranch (= isMasterBranch OR develop) never included release-v* at all, so release
+  # branches built and tested but never reached the Pack/Push steps' condition. isReleaseBranch now
+  # checks the real release-branch pattern (Saule's actual convention, confirmed via git branch -a -
+  # release-v1.4/1.5/1.6); isPublishBranch is booker-saule (this repo's real default/main branch,
+  # per gitStatus) OR a release branch.
+  - name: isReleaseBranch
+    value: $[startsWith(variables['Build.SourceBranch'], 'refs/heads/release-v')]
   - name: isPublishBranch
-    value: $[or(eq(variables.isMasterBranch, true),eq(variables['Build.SourceBranch'], 'refs/heads/develop'))]
+    value: $[or(eq(variables['Build.SourceBranch'], 'refs/heads/booker-saule'), eq(variables.isReleaseBranch, true))]
 
 parameters:
   - name: publishPackage
@@ -44,6 +66,17 @@ jobs:
 
     - task: NuGetAuthenticate@1
       displayName: 'Authenticate with Azure Artifacts'
+
+    # PR review finding: nothing pinned the .NET 10 SDK on the build agent - the net10.0 target only
+    # builds if the agent image happens to already carry it. Paired with the repo-root global.json
+    # (added alongside this) so both VSBuild@1 (via MSBuild's own SDK resolution) and any `dotnet`
+    # invocation resolve the same pinned version consistently.
+    - task: UseDotNet@2
+      name: UseDotNet10
+      displayName: 'Use .NET 10 SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '10.0.x'
 
     # Builds the whole solution (Saule.csproj's 3 TFMs, the legacy packages.config-based
     # Tests.csproj, and the SDK-style Tests.NetCore.SmokeTests.csproj) via full MSBuild in one
@@ -79,7 +112,7 @@ jobs:
                 if ($Env:assemblyVersion -match '(.*)[.](.*)[.](.*)[.](.*)')
                 {
                     [string]$packageVersion = $($Matches.1) + '.' + $($Matches.2) + '.' + $($Matches.3);
-                    if (-not [System.Convert]::ToBoolean("$(isMasterBranch)"))
+                    if (-not [System.Convert]::ToBoolean("$(isReleaseBranch)"))
                     {
                         $packageVersion = $packageVersion + '-beta';
                     }
@@ -127,6 +160,19 @@ jobs:
         versioningScheme: byEnvVar
         versionEnvVar: packageVersion
         configuration: 'Release'
+
+    # PR review finding: appveyor.yml kept the .nupkg as a downloadable build artifact; nothing
+    # replaced that here, so a failed feed push has no recovery path. This covers the mechanical half
+    # (the artifact itself); appveyor's other half - draft GitHub Releases for release-v* branches -
+    # is a separate decision (needs a GitHub service connection/PAT) flagged, not added here.
+    - task: PublishBuildArtifacts@1
+      name: PublishNupkg
+      displayName: 'Publish .nupkg as a build artifact'
+      condition: and(succeeded(), or(eq(variables.isPublishBranch, true), eq(${{ parameters.publishPackage }}, true)))
+      inputs:
+        PathtoPublish: 'Saule/bin/Release'
+        ArtifactName: 'nupkg'
+        publishLocation: 'Container'
 
     - task: NuGetCommand@2
       name: Push

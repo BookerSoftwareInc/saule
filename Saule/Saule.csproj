@@ -22,9 +22,10 @@
          independent decision with its own consumer-compatibility check, same as the
          Booker.ApplicationInsights migration's 12.0.1->13.0.3 bump - out of this session's decided
          scope). Suppressed here only so Release builds aren't blocked by a pre-existing finding;
-         flagged as a follow-up action item, not silently fixed. -->
-    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1903</WarningsNotAsErrors>
-    <CodeAnalysisRuleSet>..\StyleCop.Analyzers.ruleset</CodeAnalysisRuleSet>
+         flagged as a follow-up action item, not silently fixed. NU1900 (failure to reach the internal
+         feed's vulnerability-data endpoint) is suppressed alongside it - it's about feed availability
+         in the current environment, not an actual finding about this code, and is intermittent. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1903;NU1900</WarningsNotAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <!-- HttpRequestMessage.Properties is obsolete on net10.0 (superseded by .Options) but kept
@@ -44,11 +45,18 @@
     <PackageId>Booker.Saule</PackageId>
     <Title>Saule for Json Api</Title>
     <Authors>Jouke van der Maas</Authors>
+    <Owners>Jouke van der Maas</Owners>
     <Company>MINDBODY</Company>
     <Description>Json api library for ASP.Net Web API 2 (net47), ASP.NET Core (net10.0), and a portable serialization/query core (netstandard2.0). Custom package based on the original Saule.</Description>
     <PackageTags>web api serialization media formatter json api jsonapi ember data</PackageTags>
     <PackageReleaseNotes>Multi-targeted netstandard2.0;net47;net10.0. net47 keeps the System.Web.Http pipeline byte-identical; net10.0 adds an ASP.NET Core MVC re-implementation of the same pipeline (same class/method names); netstandard2.0 ships the portable serialization/query core only.</PackageReleaseNotes>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <!-- Restored 2026-09-09 (PR review) - the old Saule.nuspec had projectUrl/licenseUrl/copyright,
+         all silently dropped when it was removed for the SDK-style conversion. PackageLicenseExpression
+         is the modern replacement for the deprecated licenseUrl (repo's own LICENSE file confirms MIT). -->
+    <PackageProjectUrl>https://github.com/joukevandermaas/saule/</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Copyright>Copyright 2015</Copyright>
 
     <!-- Version: bumped to 2.0.0 for the multi-target restructuring, consistent with how
          Booker.ApplicationInsights and Booker.Core.Infrastructure.Libraries.WebApi both bumped
@@ -60,8 +68,12 @@
   </PropertyGroup>
 
   <!-- Surfaces the built assembly version to the Azure DevOps pipeline (azure-pipeline.yml's
-       SetVersion step reads $(assemblyVersion)) - same mechanism as the sibling repos. -->
-  <Target Name="RetrieveAssemblyVersion" AfterTargets="Build">
+       SetVersion step reads $(assemblyVersion)) - same mechanism as the sibling repos. Gated to
+       $(TF_BUILD) (an env var Azure Pipelines itself sets, absent everywhere else) per PR review -
+       this used to emit an Azure Pipelines logging command unconditionally, including for local
+       builds and consumer builds that merely reference this project, which is meaningless noise
+       outside actual CI. -->
+  <Target Name="RetrieveAssemblyVersion" AfterTargets="Build" Condition="'$(TF_BUILD)' == 'true'">
     <GetAssemblyIdentity AssemblyFiles="$(TargetPath)">
       <Output TaskParameter="Assemblies" ItemName="Assembly" />
     </GetAssemblyIdentity>
@@ -71,14 +83,13 @@
   <!-- No AssemblyInfo.cs / GenerateAssemblyInfo=false - matches the Booker.ApplicationInsights.Core.WebApi.csproj
        and Booker.Core.Infrastructure.Libraries.WebApi.csproj precedent: rely on the SDK's default
        assembly-info generation from the <Version>/<AssemblyVersion>/<FileVersion>/<Company>/<Title>
-       properties above, plus the <InternalsVisibleTo> item below (same mechanism both sibling
-       projects use for their own Tests/SmokeTests projects). The legacy ComVisible/CLSCompliant/Guid
-       COM-interop attributes the original AssemblyInfo.cs carried are dropped, same as both
-       precedents - no COM scenario applies to any of these libraries, and asserting CLS compliance
-       would be actively wrong for the net10.0 TFM anyway (ASP.NET Core's own MVC types aren't
-       CLS-compliant, so the net10.0-only Http/NetCore/* classes couldn't honestly claim it). -->
+       properties above, plus the <InternalsVisibleTo> items below (same mechanism both sibling
+       projects use for their own Tests/SmokeTests projects). ComVisible/Guid (COM-interop, no COM
+       scenario applies here) are still dropped; CLSCompliant is restored, conditionally, in
+       Properties/AssemblyInfo.CLSCompliant.cs per PR review. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Tests" />
+    <InternalsVisibleTo Include="Tests.NetCore.SmokeTests" />
   </ItemGroup>
 
   <!-- Portable core dependency - available on all 3 TFMs. -->

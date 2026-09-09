@@ -28,7 +28,10 @@ namespace Saule.Http
 
             if (context.Result is ObjectResult objectResult)
             {
-                JsonApiResultFilter.ProcessResult(context.HttpContext, objectResult, JsonApiConfiguration);
+                // requiresMediaType: false - [JsonApi] is an explicit per-action opt-in, matching
+                // net47's own JsonApiAttribute, which forces the format regardless of the client's
+                // Accept header (unlike the globally-registered filter, Section 7.1/7.2).
+                JsonApiResultFilter.ProcessResult(context.HttpContext, objectResult, JsonApiConfiguration, requiresMediaType: false);
             }
 
             base.OnActionExecuted(context);

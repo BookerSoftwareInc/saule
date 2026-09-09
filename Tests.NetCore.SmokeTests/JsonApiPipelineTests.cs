@@ -51,5 +51,38 @@ namespace Tests.NetCore.SmokeTests
 
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         }
+
+        [Fact]
+        public async Task PlainEndpoint_WithoutReturnsResource_IsNotForcedIntoJsonApi()
+        {
+            // PR review finding: without the requiresMediaType Accept-header gate, the globally
+            // registered JsonApiResultFilter forced every ObjectResult in the app through JSON:API
+            // processing, regardless of Accept header or [ReturnsResourceAttribute] presence - a
+            // plain endpoint like this one would 500 with "You must add a [ReturnsResourceAttribute]".
+            var request = new HttpRequestMessage(HttpMethod.Get, "/people/plain");
+            request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+
+            var response = await _client.SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+            Assert.DoesNotContain("ReturnsResourceAttribute", body);
+        }
+
+        [Fact]
+        public async Task UnhandledException_ProducesJsonApiErrorsDocument()
+        {
+            // PR review finding: on net47, WebApi's own HttpError-on-exception flows through the
+            // same pipeline Saule's formatter already understands. ASP.NET Core has no equivalent
+            // unless something (JsonApiExceptionFilter) converts the exception into a result first.
+            var response = await _client.GetAsync("/people/throws");
+            var body = await response.Content.ReadAsStringAsync();
+
+            Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+            Assert.Equal("application/vnd.api+json", response.Content.Headers.ContentType?.MediaType);
+            Assert.Contains("\"errors\"", body);
+            Assert.Contains("boom", body);
+        }
     }
 }

@@ -1,7 +1,9 @@
+using System;
 using System.Globalization;
 using System.Linq;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.Extensions.Primitives;
 
 namespace Saule.Http
 {
@@ -27,19 +29,29 @@ namespace Saule.Http
 
         public bool ContainsPrefix(string prefix)
         {
-            return _query.Keys.Any(k => string.Equals(k.ToPascalCase(), prefix, System.StringComparison.OrdinalIgnoreCase));
+            // NameValuePairsValueProvider (net47's base class) uses actual prefix matching, not
+            // exact equality - needed for complex/nested model binding (e.g. a [FromUri] filter
+            // object querying whether any key starts with "Filter."). Exact equality here would
+            // make such binding silently fail to see any of its properties.
+            return _query.Keys.Any(k => k.ToPascalCase().StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
         }
 
         public ValueProviderResult GetValue(string key)
         {
-            var match = _query.FirstOrDefault(p => string.Equals(p.Key.ToPascalCase(), key, System.StringComparison.OrdinalIgnoreCase));
+            var matches = _query
+                .Where(p => string.Equals(p.Key.ToPascalCase(), key, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(p => p.Value.ToArray())
+                .Where(v => v != null)
+                .ToArray();
 
-            if (match.Key == null)
+            if (matches.Length == 0)
             {
                 return ValueProviderResult.None;
             }
 
-            return new ValueProviderResult(match.Value.ToString(), _culture);
+            // A repeated key (?sort=a&sort=b) must bind as multiple StringValues entries, not one
+            // comma-joined string, or an array/list-bound parameter only ever sees one element.
+            return new ValueProviderResult(new StringValues(matches), _culture);
         }
     }
 }

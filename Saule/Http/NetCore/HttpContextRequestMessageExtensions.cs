@@ -19,6 +19,18 @@ namespace Saule.Http
     {
         private const string ShimItemsKey = "Saule_ShimHttpRequestMessage";
 
+        /// <summary>
+        /// The deployment's virtual path root (<see cref="HttpRequest.PathBase"/>) and the matched
+        /// endpoint's route template - net47's <c>DefaultUrlPathBuilder(virtualPathRoot, template)</c>
+        /// needs both to build correct canonical links under a real deployment (e.g. PathBase=/crm).
+        /// Stashed here, not read directly from HttpContext at the point they're needed, because
+        /// JsonApiRequestPreprocessor.PrepareUrlPathBuilder only has the portable
+        /// <see cref="HttpRequestMessage"/> shim to work with, by design (Standard-2.0-Migration-Plan.md
+        /// Section 7.1) - it must stay HttpContext-agnostic to remain shared with net47.
+        /// </summary>
+        internal const string PathBasePropertyKey = "Saule_NetCore_PathBase";
+        internal const string RouteTemplatePropertyKey = "Saule_NetCore_RouteTemplate";
+
         internal static HttpRequestMessage GetOrCreateShimRequestMessage(this HttpContext context)
         {
             if (context.Items.TryGetValue(ShimItemsKey, out var existing) && existing is HttpRequestMessage shim)
@@ -46,6 +58,10 @@ namespace Saule.Http
                     }
                 }
             }
+
+            message.Properties[PathBasePropertyKey] = request.PathBase.Value;
+            message.Properties[RouteTemplatePropertyKey] =
+                (context.GetEndpoint() as Microsoft.AspNetCore.Routing.RouteEndpoint)?.RoutePattern?.RawText;
 
             context.Items[ShimItemsKey] = message;
             return message;

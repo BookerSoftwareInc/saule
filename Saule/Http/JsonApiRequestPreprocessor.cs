@@ -104,6 +104,23 @@ namespace Saule.Http
                 jsonApiSerializer.UrlPathBuilder = new DefaultUrlPathBuilder(
                     virtualPathRoot, routeTemplate);
             }
+#elif NET10_0
+            else
+            {
+                // Mirrors the NETFRAMEWORK branch above using the PathBase/route-template pair the
+                // net10.0 HttpContext-to-HttpRequestMessage shim stashes (Http/NetCore/
+                // HttpContextRequestMessageExtensions.cs) - without this, canonical links would lose
+                // the deployment's virtual path root/PathBase entirely under a real reverse-proxy or
+                // sub-application deployment (e.g. PathBase=/crm).
+                request.Properties.TryGetValue(HttpContextRequestMessageExtensions.PathBasePropertyKey, out var pathBaseObj);
+                request.Properties.TryGetValue(HttpContextRequestMessageExtensions.RouteTemplatePropertyKey, out var routeTemplateObj);
+                var routeTemplate = routeTemplateObj as string;
+                var virtualPathRoot = string.IsNullOrEmpty(pathBaseObj as string) ? "/" : (string)pathBaseObj;
+
+                jsonApiSerializer.UrlPathBuilder = string.IsNullOrEmpty(routeTemplate)
+                    ? new DefaultUrlPathBuilder(virtualPathRoot)
+                    : new DefaultUrlPathBuilder(virtualPathRoot, routeTemplate);
+            }
 #else
             else
             {

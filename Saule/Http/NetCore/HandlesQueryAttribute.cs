@@ -1,5 +1,6 @@
 using System.Linq;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Saule;
 using Saule.Queries;
@@ -58,7 +59,16 @@ namespace Saule.Http
         private bool EnsureAttributeNotSpecified<T>(ActionExecutingContext context)
             where T : class
         {
-            if (context.ActionDescriptor.FilterDescriptors.Any(f => f.Filter is T))
+            // PR review finding: context.ActionDescriptor.FilterDescriptors includes controller-level
+            // (class-attribute) filters merged in with action-level ones - net47's
+            // HttpActionDescriptor.GetCustomAttributes<T>() only ever inspected the action/method
+            // itself, so a controller-level [DisableDefaultIncluded] combined with an action-level
+            // [HandlesQuery] was allowed there but would incorrectly throw here. Reflecting on the
+            // action's MethodInfo directly restricts this to the same action-level-only scope.
+            var isSpecifiedOnAction = (context.ActionDescriptor as ControllerActionDescriptor)?
+                .MethodInfo.GetCustomAttributes(typeof(T), inherit: true).Any() ?? false;
+
+            if (isSpecifiedOnAction)
             {
                 context.Result = new ObjectResult(new ProblemDetails
                 {

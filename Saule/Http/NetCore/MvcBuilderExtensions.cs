@@ -65,6 +65,11 @@ namespace Saule.Http
 
             builder.AddMvcOptions(options =>
             {
+                // Registered first so it runs outermost among these two - an exception must be
+                // turned into a ProblemDetails result before JsonApiResultFilter's result-filter
+                // stage ever sees it (Standard-2.0-Migration-Plan.md Section 7.1's exception-handling
+                // note: net47 gets this for free via HttpError, net10.0 doesn't without this filter).
+                options.Filters.Add(new JsonApiExceptionFilter(jsonApiConfiguration));
                 options.Filters.Add(new JsonApiResultFilter(jsonApiConfiguration));
                 options.ValueProviderFactories.Add(new JsonApiQueryValueProviderFactory());
 
