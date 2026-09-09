@@ -30,7 +30,7 @@ namespace Saule.Http
             // lifecycle, and other things (logging, downstream middleware) may need it afterward.
             // context.ReaderFactory is the framework's own factory for this exact purpose (respects
             // any pooled/custom reader configuration too) and does not dispose the underlying stream.
-            var reader = context.ReaderFactory(context.HttpContext.Request.Body, encoding);
+            using var reader = context.ReaderFactory(context.HttpContext.Request.Body, encoding);
             try
             {
                 var json = JToken.Parse(await reader.ReadToEndAsync());
