@@ -1,0 +1,138 @@
+trigger:
+  branches:
+    include:
+      - master
+      - develop
+      # Saule's actual release branches are dash-named (release-v1.4, release-v1.5, release-v1.6 -
+      # confirmed via `git branch -a` and the removed appveyor.yml's own `/(master|release-v.+)/`
+      # branch filter), not slash-named like Booker.ApplicationInsights' `release/*` pattern this
+      # pipeline was cloned from (that repo's release branches look like Platform/Release/Core-1.5).
+      # `release/*` would never have matched any of Saule's real release branches.
+      - release-v*
+  paths:
+      include:
+        - Saule/*
+
+pr:
+  paths:
+    include:
+      - Saule/*
+
+pool: 'aws-booker-dev-win2025'
+
+variables:
+  - name: projectName
+    value: "Saule/Saule.csproj"
+  - name: isMasterBranch
+    value: $[eq(variables['Build.SourceBranch'], 'refs/heads/master')]
+  - name: isPublishBranch
+    value: $[or(eq(variables.isMasterBranch, true),eq(variables['Build.SourceBranch'], 'refs/heads/develop'))]
+
+parameters:
+  - name: publishPackage
+    displayName: 'Publish Package'
+    type: boolean
+    default: false
+
+jobs:
+
+  - job: PublishLibrary
+    displayName: 'Publish Library'
+    steps:
+    - task: NuGetToolInstaller@1
+      displayName: 'Install NuGet'
+
+    - task: NuGetAuthenticate@1
+      displayName: 'Authenticate with Azure Artifacts'
+
+    # Builds the whole solution (Saule.csproj's 3 TFMs, the legacy packages.config-based
+    # Tests.csproj, and the SDK-style Tests.NetCore.SmokeTests.csproj) via full MSBuild in one
+    # step - the same command this migration was actually verified with locally
+    # ("MSBuild.exe Saule.sln -t:Restore" then "-t:Build"). A DotNetCoreCLI@2-only restore/build
+    # (as the original single-project pipeline this was cloned from used) cannot restore or build
+    # Tests.csproj at all, since `dotnet restore`/`dotnet build` don't handle packages.config-style
+    # legacy projects - confirmed as a real gap in this pipeline before this fix, not assumed.
+    - task: VSBuild@1
+      name: RestoreAndBuild
+      displayName: 'Restore and build solution'
+      inputs:
+        solution: 'Saule.sln'
+        msbuildArgs: '/t:Restore,Build /p:Configuration=Release'
+        platform: 'Any CPU'
+        configuration: 'Release'
+
+    - task: PowerShell@2
+      name: SetVersion
+      displayName: 'Set Package Version'
+      condition: and(succeeded(), or(eq(variables.isPublishBranch, true), eq(${{ parameters.publishPackage }}, true)))
+      env:
+        assemblyVersion: $(assemblyVersion)
+      inputs:
+        targetType: 'inline'
+        script: |
+          if ( $Env:assemblyVersion -eq $null)
+            {
+                throw "Assembly version is not defined.";
+            }
+            else
+            {
+                if ($Env:assemblyVersion -match '(.*)[.](.*)[.](.*)[.](.*)')
+                {
+                    [string]$packageVersion = $($Matches.1) + '.' + $($Matches.2) + '.' + $($Matches.3);
+                    if (-not [System.Convert]::ToBoolean("$(isMasterBranch)"))
+                    {
+                        $packageVersion = $packageVersion + '-beta';
+                    }
+
+                    Write-Host "##vso[build.updatebuildnumber]$packageVersion"
+                    Write-Host "##vso[task.setvariable variable=packageVersion;]$packageVersion";
+                }
+                else
+                {
+                    Write-Host "AssemblyVersion: $Env:assemblyVersion"
+                    throw "Assembly version can not be properly evaluated: $Env:assemblyVersion";
+                }
+            }
+
+    # Tests.csproj is a legacy (non-SDK) test project that DotNetCoreCLI@2/`dotnet test` cannot
+    # build - it needs full MSBuild.exe (the VSBuild@1 step above), so it's run here via VSTest@2
+    # against the already-built net47 Tests.dll.
+    - task: VSTest@2
+      name: RunTests
+      displayName: 'Run net47 Tests'
+      inputs:
+        testAssemblyVer2: '**\Tests\bin\**\Tests.dll'
+        searchFolder: '$(System.DefaultWorkingDirectory)'
+
+    # Tests.NetCore.SmokeTests.csproj IS SDK-style (net10.0), so DotNetCoreCLI@2 handles it
+    # directly - real functional smoke tests for the net10.0 ASP.NET Core pipeline
+    # (Standard-2.0-Migration-Plan.md Section 9/10, Action item 13), already built above.
+    - task: DotNetCoreCLI@2
+      name: RunNetCoreSmokeTests
+      displayName: 'Run net10.0 smoke tests'
+      inputs:
+        command: 'test'
+        projects: 'Tests.NetCore.SmokeTests/Tests.NetCore.SmokeTests.csproj'
+        arguments: '--no-build --configuration Release'
+
+    - task: DotNetCoreCLI@2
+      name: Pack
+      displayName: 'Package Library'
+      condition: and(succeeded(), or(eq(variables.isPublishBranch, true), eq(${{ parameters.publishPackage }}, true)))
+      env:
+        packageVersion: $(packageVersion)
+      inputs:
+        command: pack
+        packagesToPack: $(projectName)
+        versioningScheme: byEnvVar
+        versionEnvVar: packageVersion
+        configuration: 'Release'
+
+    - task: NuGetCommand@2
+      name: Push
+      displayName: 'Promote Package'
+      condition: and(succeeded(), or(eq(variables.isPublishBranch, true), eq(${{ parameters.publishPackage }}, true)))
+      inputs:
+        command: push
+        publishVstsFeed: 'b09865af-4dbf-446c-8e46-514f14f48655'
+        allowPackageConflicts: true
