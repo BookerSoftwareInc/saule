@@ -2,11 +2,11 @@
 
 > **Status:** 🟢 **Implemented and verified 2026-09-09** on branch `booker/pbi/1538115_analysis_standard2` (based on `origin/booker-saule`) — `Saule.csproj` is now SDK-style, multi-targeting `netstandard2.0;net47;net10.0` (Approach B, Section 4). All 3 TFMs build clean (Debug and Release), `dotnet pack` produces correct per-TFM dependency groups (Section 9), the existing `net47` xUnit suite passes 322/323 (the 1 failure is pre-existing on unmodified `booker-saule`, confirmed via a stash-based A/B comparison — not a regression), and a real functional smoke test against an in-memory ASP.NET Core `TestServer` on `net10.0` passes 6/6 checks. Two genuine bugs were found and fixed during implementation (not just designed around) — see Section 10. Not yet committed/reviewed.
 >
-> **Repo:** `saule` (NuGet package id `Booker.Saule`) · Local: `C:\WORKSPACE\Booker\saule`
+> **Repo:** `saule` (NuGet package id `Booker.Saule`)
 >
 > **Branch:** `booker/pbi/1538115_analysis_standard2`, re-created from `origin/booker-saule` (commit `de8c64b`) on 2026-09-09 — see [Section 3.0](#30-branch-correction--why-this-matters) for why the original branch (accidentally cut from upstream `master`) would have produced an analysis against the wrong source tree entirely.
 >
-> **Owner:** Mukul Dhabale · **Last updated:** 2026-09-09
+> **Last updated:** 2026-09-09
 >
 > **Note on file placement:** this repo already has a lowercase `docs/` folder (a Jekyll GitHub Pages site). Windows' case-insensitive filesystem means a sibling-repo-style `Docs/` folder would collide with it, so this plan lives at the repo root instead.
 

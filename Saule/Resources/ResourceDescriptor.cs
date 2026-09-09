@@ -16,7 +16,7 @@ namespace Saule.Resources
         /// <param name="resource">The resource type for this request.</param>
         internal static void AttachToRequest(HttpRequestMessage request, ApiResource resource)
         {
-            request.Properties.Add(Constants.PropertyNames.ResourceDescriptor, resource);
+            request.Properties[Constants.PropertyNames.ResourceDescriptor] = resource;
         }
     }
 }
