@@ -1,0 +1,210 @@
+trigger:
+  branches:
+    include:
+      - booker-saule
+      - develop
+      # Saule's actual release branches are dash-named (release-v1.4, release-v1.5, release-v1.6 -
+      # confirmed via `git branch -a` and the removed appveyor.yml's own `/(master|release-v.+)/`
+      # branch filter), not slash-named like Booker.ApplicationInsights' `release/*` pattern this
+      # pipeline was cloned from (that repo's release branches look like Platform/Release/Core-1.5).
+      # `release/*` would never have matched any of Saule's real release branches.
+      - release-v*
+  paths:
+      include:
+        # Re-fixed 2026-09-09 - flagged independently by a Copilot review AND a human reviewer
+        # (Otavio), the second with a sharper, more concrete framing than "too shallow": changes
+        # confined to Tests/, Tests.NetCore.SmokeTests/, or Saule.sln trigger no build and no tests
+        # at all, so a PR that breaks tests passes CI by simply never running it. This was reverted
+        # once already (matching Booker.ApplicationInsights' own shallow `*` convention), but two
+        # independent reviewers agreeing, with the human reviewer's sharper framing, outweighs
+        # matching a precedent that may carry the same latent gap. Includes the two sibling test
+        # projects and the solution file explicitly, not just Saule/**.
+        - Saule/**
+        - Tests/**
+        - Tests.NetCore.SmokeTests/**
+        - Saule.sln
+        # PR review finding: the repo-root global.json pins the .NET 10 SDK for every build (VSBuild@1's
+        # MSBuild SDK resolution and any `dotnet` invocation both read it), but it wasn't in this path
+        # filter - a PR that changes or breaks the pinned SDK version could skip this pipeline entirely.
+        - global.json
+
+pr:
+  paths:
+    include:
+      - Saule/**
+      - Tests/**
+      - Tests.NetCore.SmokeTests/**
+      - Saule.sln
+      - global.json
+
+pool: 'aws-booker-dev-win2025'
+
+variables:
+  - name: projectName
+    value: "Saule/Saule.csproj"
+  # Fixed 2026-09-09 (PR review): this used to check refs/heads/master, which the trigger above
+  # never builds (booker-saule/develop/release-v* only) - isMasterBranch was always false, so the
+  # "-beta" suffix below never dropped and no stable package could ever be produced, and
+  # isPublishBranch (= isMasterBranch OR develop) never included release-v* at all, so release
+  # branches built and tested but never reached the Pack/Push steps' condition. isReleaseBranch now
+  # checks the real release-branch pattern (Saule's actual convention, confirmed via git branch -a -
+  # release-v1.4/1.5/1.6); isPublishBranch is booker-saule (this repo's real default/main branch,
+  # per gitStatus) OR a release branch.
+  - name: isReleaseBranch
+    value: $[startsWith(variables['Build.SourceBranch'], 'refs/heads/release-v')]
+  - name: isPublishBranch
+    value: $[or(eq(variables['Build.SourceBranch'], 'refs/heads/booker-saule'), eq(variables.isReleaseBranch, true))]
+
+parameters:
+  - name: publishPackage
+    displayName: 'Publish Package'
+    type: boolean
+    default: false
+
+jobs:
+
+  - job: PublishLibrary
+    displayName: 'Publish Library'
+    steps:
+    - task: NuGetToolInstaller@1
+      displayName: 'Install NuGet'
+
+    - task: NuGetAuthenticate@1
+      displayName: 'Authenticate with Azure Artifacts'
+
+    # PR review finding: nothing pinned the .NET 10 SDK on the build agent - the net10.0 target only
+    # builds if the agent image happens to already carry it. Paired with the repo-root global.json
+    # (added alongside this) so both VSBuild@1 (via MSBuild's own SDK resolution) and any `dotnet`
+    # invocation resolve the same pinned version consistently.
+    - task: UseDotNet@2
+      name: UseDotNet10
+      displayName: 'Use .NET 10 SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '10.0.x'
+
+    # PR review finding (#4): /p:RestorePackagesConfig=true combined into the same /t:Restore,Build
+    # MSBuild invocation below does NOT work for the legacy packages.config project (Tests.csproj) -
+    # a single MSBuild invocation evaluates the project (resolving its ..\packages\...\*.targets
+    # imports via Exists() conditions) once, before any target - including Restore - runs. So on a
+    # clean agent, Tests.csproj's EnsureNuGetPackageBuildImports/hard <Error> still fires because the
+    # packages aren't on disk yet at evaluation time, even though Restore later succeeds. A genuinely
+    # separate restore step, in its own process, is required so evaluation happens again afterward.
+    - task: NuGetCommand@2
+      name: RestorePackagesConfig
+      displayName: 'Restore packages.config packages'
+      inputs:
+        command: 'restore'
+        restoreSolution: 'Saule.sln'
+
+    # Builds the whole solution (Saule.csproj's 3 TFMs, the legacy packages.config-based
+    # Tests.csproj, and the SDK-style Tests.NetCore.SmokeTests.csproj) via full MSBuild in one
+    # step - the same command this migration was actually verified with locally
+    # ("MSBuild.exe Saule.sln -t:Restore" then "-t:Build"). A DotNetCoreCLI@2-only restore/build
+    # (as the original single-project pipeline this was cloned from used) cannot restore or build
+    # Tests.csproj at all, since `dotnet restore`/`dotnet build` don't handle packages.config-style
+    # legacy projects - confirmed as a real gap in this pipeline before this fix, not assumed.
+    - task: VSBuild@1
+      name: RestoreAndBuild
+      displayName: 'Restore and build solution'
+      inputs:
+        solution: 'Saule.sln'
+        msbuildArgs: '/t:Restore,Build /p:Configuration=Release'
+        platform: 'Any CPU'
+        configuration: 'Release'
+
+    - task: PowerShell@2
+      name: SetVersion
+      displayName: 'Set Package Version'
+      condition: and(succeeded(), or(eq(variables.isPublishBranch, true), eq(${{ parameters.publishPackage }}, true)))
+      env:
+        assemblyVersion: $(assemblyVersion)
+      inputs:
+        targetType: 'inline'
+        script: |
+          if ( $Env:assemblyVersion -eq $null)
+            {
+                throw "Assembly version is not defined.";
+            }
+            else
+            {
+                if ($Env:assemblyVersion -match '(.*)[.](.*)[.](.*)[.](.*)')
+                {
+                    [string]$packageVersion = $($Matches.1) + '.' + $($Matches.2) + '.' + $($Matches.3);
+                    if (-not [System.Convert]::ToBoolean("$(isReleaseBranch)"))
+                    {
+                        # PR review finding (#3): Saule.csproj's <Version> is a hand-bumped literal, so
+                        # every build on the same version produced the exact same "-beta" package
+                        # version - combined with allowPackageConflicts:true on the Push step below,
+                        # every build after the first silently pushed nothing new behind a green
+                        # checkmark. Appending the build ID makes every beta package unique without
+                        # requiring a csproj edit for every commit; a stable (non-beta) release still
+                        # requires bumping <Version> before merging, same as before.
+                        $packageVersion = $packageVersion + '-beta.$(Build.BuildId)';
+                    }
+
+                    Write-Host "##vso[build.updatebuildnumber]$packageVersion"
+                    Write-Host "##vso[task.setvariable variable=packageVersion;]$packageVersion";
+                }
+                else
+                {
+                    Write-Host "AssemblyVersion: $Env:assemblyVersion"
+                    throw "Assembly version can not be properly evaluated: $Env:assemblyVersion";
+                }
+            }
+
+    # Tests.csproj is a legacy (non-SDK) test project that DotNetCoreCLI@2/`dotnet test` cannot
+    # build - it needs full MSBuild.exe (the VSBuild@1 step above), so it's run here via VSTest@2
+    # against the already-built net47 Tests.dll.
+    - task: VSTest@2
+      name: RunTests
+      displayName: 'Run net47 Tests'
+      inputs:
+        testAssemblyVer2: '**\Tests\bin\**\Tests.dll'
+        searchFolder: '$(System.DefaultWorkingDirectory)'
+
+    # Tests.NetCore.SmokeTests.csproj IS SDK-style (net10.0), so DotNetCoreCLI@2 handles it
+    # directly - real functional smoke tests for the net10.0 ASP.NET Core pipeline
+    # (Standard-2.0-Migration-Plan.md Section 9/10, Action item 13), already built above.
+    - task: DotNetCoreCLI@2
+      name: RunNetCoreSmokeTests
+      displayName: 'Run net10.0 smoke tests'
+      inputs:
+        command: 'test'
+        projects: 'Tests.NetCore.SmokeTests/Tests.NetCore.SmokeTests.csproj'
+        arguments: '--no-build --configuration Release'
+
+    - task: DotNetCoreCLI@2
+      name: Pack
+      displayName: 'Package Library'
+      condition: and(succeeded(), or(eq(variables.isPublishBranch, true), eq(${{ parameters.publishPackage }}, true)))
+      env:
+        packageVersion: $(packageVersion)
+      inputs:
+        command: pack
+        packagesToPack: $(projectName)
+        versioningScheme: byEnvVar
+        versionEnvVar: packageVersion
+        configuration: 'Release'
+
+    # PR review finding: appveyor.yml kept the .nupkg as a downloadable build artifact; nothing
+    # replaced that here, so a failed feed push has no recovery path. This covers the mechanical half
+    # (the artifact itself); appveyor's other half - draft GitHub Releases for release-v* branches -
+    # is a separate decision (needs a GitHub service connection/PAT) flagged, not added here.
+    - task: PublishBuildArtifacts@1
+      name: PublishNupkg
+      displayName: 'Publish .nupkg as a build artifact'
+      condition: and(succeeded(), or(eq(variables.isPublishBranch, true), eq(${{ parameters.publishPackage }}, true)))
+      inputs:
+        PathtoPublish: 'Saule/bin/Release'
+        ArtifactName: 'nupkg'
+        publishLocation: 'Container'
+
+    - task: NuGetCommand@2
+      name: Push
+      displayName: 'Promote Package'
+      condition: and(succeeded(), or(eq(variables.isPublishBranch, true), eq(${{ parameters.publishPackage }}, true)))
+      inputs:
+        command: push
+        publishVstsFeed: 'b09865af-4dbf-446c-8e46-514f14f48655'
+        allowPackageConflicts: true

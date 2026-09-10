@@ -1,164 +1,143 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="14.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{AD43EDE3-88C9-47EE-BAE1-C14C80F1ACE4}</ProjectGuid>
-    <OutputType>Library</OutputType>
-    <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Saule</RootNamespace>
+    <!-- Approach B (see repo-root Standard-2.0-Migration-Plan.md, Section 4/7.1):
+         net47          = classic System.Web.Http/System.Net.Http.Formatting Web API 2 pipeline
+                           (today's consumers: CRM, BookerMain x3 - unchanged).
+         net10.0        = ASP.NET Core MVC re-implementation of the same pipeline (custom
+                           TextOutputFormatter/TextInputFormatter, MVC filters, middleware, DI
+                           registration) under Http/NetCore/ - same class/method names as net47
+                           where the design doc calls for it, built against a different base class.
+         netstandard2.0 = portable core only (serialization/query engine, ApiResource,
+                           IApiResourceProvider); the Web API 2-specific wiring has no
+                           netstandard2.0 build available (System.Web.Http was never ported) and no
+                           portable host would consume it anyway. -->
+    <TargetFrameworks>netstandard2.0;net47;net10.0</TargetFrameworks>
     <AssemblyName>Saule</AssemblyName>
-    <TargetFrameworkVersion>v4.7</TargetFrameworkVersion>
-    <FileAlignment>512</FileAlignment>
-    <NuGetPackageImportStamp>
-    </NuGetPackageImportStamp>
-    <TargetFrameworkProfile />
+    <RootNamespace>Saule</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors Condition="'$(Configuration)'=='Release'">true</TreatWarningsAsErrors>
+    <!-- Newtonsoft.Json 12.0.1 has a known high-severity advisory (NU1903, GHSA-5crp-9r3c-p9vr) -
+         pre-existing on this branch already, not touched by this migration (bumping it is an
+         independent decision with its own consumer-compatibility check, same as the
+         Booker.ApplicationInsights migration's 12.0.1->13.0.3 bump - out of this session's decided
+         scope). Suppressed here only so Release builds aren't blocked by a pre-existing finding;
+         flagged as a follow-up action item, not silently fixed. NU1900 (failure to reach the internal
+         feed's vulnerability-data endpoint) is suppressed alongside it - it's about feed availability
+         in the current environment, not an actual finding about this code, and is intermittent. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1903;NU1900</WarningsNotAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- HttpRequestMessage.Properties is obsolete on net10.0 (superseded by .Options) but kept
+         deliberately: it's the one shared per-request bag ResourceDescriptor/DefaultApiResourceProviderFactory
+         use identically across all 3 TFMs (Standard-2.0-Migration-Plan.md Section 7.1) - switching to
+         .Options on net10.0 only would fork behavior for no benefit, since Properties still works. -->
+    <!-- JsonApiException's legacy ISerializable/SecurityPermissionAttribute serialization
+         constructor pattern (portable file, unchanged from upstream Saule) is obsolete on net10.0
+         (Code Access Security / formatter-based serialization no longer supported) but kept as-is,
+         same reasoning as CS0618 above - it's shared, working code, not touched by this migration. -->
+    <NoWarn Condition="'$(TargetFramework)'=='net10.0'">$(NoWarn);CS0618;CS0672;SYSLIB0003;SYSLIB0051</NoWarn>
+
+    <!-- Package metadata (moved off the standalone Saule.nuspec/packages.config/appveyor.yml so a
+         multi-TFM `dotnet pack` ships all three lib folders and declares the real per-TFM
+         dependency set - same rationale as Booker.Core.Infrastructure.Libraries.WebApi.csproj and
+         Booker.ApplicationInsights.Core.WebApi.csproj). -->
+    <PackageId>Booker.Saule</PackageId>
+    <Title>Saule for Json Api</Title>
+    <Authors>Jouke van der Maas</Authors>
+    <Owners>Jouke van der Maas</Owners>
+    <Company>MINDBODY</Company>
+    <Description>Json api library for ASP.Net Web API 2 (net47), ASP.NET Core (net10.0), and a portable serialization/query core (netstandard2.0). Custom package based on the original Saule.</Description>
+    <PackageTags>web api serialization media formatter json api jsonapi ember data</PackageTags>
+    <PackageReleaseNotes>Multi-targeted netstandard2.0;net47;net10.0. net47 keeps the System.Web.Http pipeline byte-identical; net10.0 adds an ASP.NET Core MVC re-implementation of the same pipeline (same class/method names); netstandard2.0 ships the portable serialization/query core only.</PackageReleaseNotes>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <!-- Restored 2026-09-09 (PR review) - the old Saule.nuspec had projectUrl/licenseUrl/copyright,
+         all silently dropped when it was removed for the SDK-style conversion. PackageLicenseExpression
+         is the modern replacement for the deprecated licenseUrl (repo's own LICENSE file confirms MIT). -->
+    <PackageProjectUrl>https://github.com/joukevandermaas/saule/</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Copyright>Copyright 2015</Copyright>
+
+    <!-- Version: bumped to 2.0.0 for the multi-target restructuring, consistent with how
+         Booker.ApplicationInsights and Booker.Core.Infrastructure.Libraries.WebApi both bumped
+         their major version when they added multi-targeting. net47 public surface/behavior is
+         unchanged; the version bump signals the structural/packaging change (new TFMs added). -->
+    <Version>2.0.0</Version>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <DocumentationFile>bin\Debug\Saule.XML</DocumentationFile>
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <CodeAnalysisRuleSet>..\StyleCop.Analyzers.ruleset</CodeAnalysisRuleSet>
-    <CodeAnalysisIgnoreGeneratedCode>true</CodeAnalysisIgnoreGeneratedCode>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <DocumentationFile>bin\Release\Saule.XML</DocumentationFile>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <CodeAnalysisRuleSet>..\StyleCop.Analyzers.ruleset</CodeAnalysisRuleSet>
-    <CodeAnalysisIgnoreGeneratedCode>true</CodeAnalysisIgnoreGeneratedCode>
-  </PropertyGroup>
-  <ItemGroup>
-    <Reference Include="Humanizer, Version=2.6.0.0, Culture=neutral, PublicKeyToken=979442b78dfc278e, processorArchitecture=MSIL">
-      <HintPath>..\packages\Humanizer.Core.2.6.2\lib\netstandard2.0\Humanizer.dll</HintPath>
-    </Reference>
-    <Reference Include="Newtonsoft.Json, Version=12.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
-      <HintPath>..\packages\Newtonsoft.Json.12.0.1\lib\net45\Newtonsoft.Json.dll</HintPath>
-    </Reference>
-    <Reference Include="System" />
-    <Reference Include="System.Configuration" />
-    <Reference Include="System.Core" />
-    <Reference Include="Microsoft.CSharp" />
-    <Reference Include="System.Net.Http" />
-    <Reference Include="System.Net.Http.Formatting, Version=5.2.7.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
-      <HintPath>..\packages\Microsoft.AspNet.WebApi.Client.5.2.7\lib\net45\System.Net.Http.Formatting.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Web.Http, Version=5.2.7.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
-      <HintPath>..\packages\Microsoft.AspNet.WebApi.Core.5.2.7\lib\net45\System.Web.Http.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Xml" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Include="ApiResource.cs" />
-    <Compile Include="Http\HandlesQueryAttribute.cs" />
-    <Compile Include="Http\JsonApiAttribute.cs" />
-    <Compile Include="Http\JsonApiProcessor.cs" />
-    <Compile Include="Http\JsonApiQueryValueProvider.cs" />
-    <Compile Include="Http\JsonApiQueryValueProviderFactory.cs" />
-    <Compile Include="JsonApiSerializerOfT.cs" />
-    <Compile Include="Queries\Fieldset\FieldsetContext.cs" />
-    <Compile Include="Queries\Fieldset\FieldsetProperty.cs" />
-    <Compile Include="Queries\Pagination\PagedResult.cs" />
-    <Compile Include="Queries\Pagination\PagedResultQuery.cs" />
-    <Compile Include="Resources\DefaultApiResourceProvider.cs" />
-    <Compile Include="Resources\DefaultApiResourceProviderFactory.cs" />
-    <Compile Include="Resources\IApiResourceProvider.cs" />
-    <Compile Include="Resources\IApiResourceProviderFactory.cs" />
-    <Compile Include="Serialization\CamelCasePropertyNameConverter.cs" />
-    <Compile Include="Serialization\DefaultPropertyNameConverter.cs" />
-    <Compile Include="Serialization\IPropertyNameConverter.cs" />
-    <Compile Include="Serialization\SourceContractResolver.cs" />
-    <Compile Include="StringDictionaryExtensions.cs" />
-    <Compile Include="FormatterPriority.cs" />
-    <Compile Include="Http\DisableDefaultIncludedAttribute.cs" />
-    <Compile Include="Http\AllowsQueryAttribute.cs" />
-    <Compile Include="Http\HttpConfigExtensions.cs" />
-    <Compile Include="Http\JsonApiConfiguration.cs" />
-    <Compile Include="Http\FilterExpressions\CaseInsensitiveStringQueryFilterExpression.cs" />
-    <Compile Include="Http\FilterExpressions\DefaultQueryFilterExpression.cs" />
-    <Compile Include="Http\FilterExpressions\LambdaQueryFilterExpression.cs" />
-    <Compile Include="Http\IQueryFilterExpression.cs" />
-    <Compile Include="Http\PreprocessingDelegatingHandler.cs" />
-    <Compile Include="Http\QueryContextUtils.cs" />
-    <Compile Include="Constants.cs" />
-    <Compile Include="JsonApiSerializer.cs" />
-    <Compile Include="LinkType.cs" />
-    <Compile Include="NullGuardExtensions.cs" />
-    <Compile Include="ObjectExtensions.cs" />
-    <Compile Include="PreprocessResult.cs" />
-    <Compile Include="Queries\Filtering\FilterContext.cs" />
-    <Compile Include="Queries\Filtering\FilterInterpreter.cs" />
-    <Compile Include="Queries\Filtering\FilterProperty.cs" />
-    <Compile Include="Http\QueryFilterExpressionCollection.cs" />
-    <Compile Include="Queries\Filtering\TypeCorrectingVisitor.cs" />
-    <Compile Include="Queries\Including\IncludeContext.cs" />
-    <Compile Include="Queries\Including\IncludeProperty.cs" />
-    <Compile Include="Queries\Lambda.cs" />
-    <Compile Include="Queries\Query.cs" />
-    <Compile Include="Queries\QueryContext.cs" />
-    <Compile Include="Queries\Sorting\SortInterpreter.cs" />
-    <Compile Include="Queries\Sorting\SortContext.cs" />
-    <Compile Include="Queries\Sorting\SortDirection.cs" />
-    <Compile Include="Queries\Sorting\SortProperty.cs" />
-    <Compile Include="Serialization\ResourceGraphPathSet.cs" />
-    <Compile Include="Serialization\ResourceGraphRelationship.cs" />
-    <Compile Include="Serialization\ResourceGraph.cs" />
-    <Compile Include="Serialization\ResourceSerializer.cs" />
-    <Compile Include="Serialization\ResourceGraphNodeKey.cs" />
-    <Compile Include="Serialization\ResourceGraphNode.cs" />
-    <Compile Include="ResourceRelationshipOfT.cs" />
-    <Compile Include="Serialization\CanonicalUrlPathBuilder.cs" />
-    <Compile Include="Serialization\JsonApiContractResolver.cs" />
-    <Compile Include="Serialization\DefaultUrlPathBuilder.cs" />
-    <Compile Include="Serialization\IUrlPathBuilder.cs" />
-    <Compile Include="Http\PaginatedAttribute.cs" />
-    <Compile Include="Http\ReturnsResourceAttribute.cs" />
-    <Compile Include="Http\JsonApiMediaTypeFormatter.cs" />
-    <Compile Include="RelationshipKind.cs" />
-    <Compile Include="Queries\Pagination\PaginationContext.cs" />
-    <Compile Include="Queries\Pagination\PaginationInterpreter.cs" />
-    <Compile Include="Queries\EnumerableExtensions.cs" />
-    <Compile Include="Queries\QueryMethod.cs" />
-    <Compile Include="Queries\Pagination\PaginationQuery.cs" />
-    <Compile Include="Serialization\ApiError.cs" />
-    <Compile Include="ResourceAttribute.cs" />
-    <Compile Include="ResourceRelationship.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Serialization\ErrorSerializer.cs" />
-    <Compile Include="Serialization\ResourceDeserializer.cs" />
-    <Compile Include="JsonApiException.cs" />
-    <Compile Include="StringExtensions.cs" />
-    <Compile Include="TypeExtensions.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="app.config">
-      <SubType>Designer</SubType>
-    </None>
-    <None Include="packages.config" />
-    <None Include="Saule.nuspec" />
-  </ItemGroup>
-  <ItemGroup>
-    <Analyzer Include="..\packages\StyleCop.Analyzers.1.0.2\analyzers\dotnet\cs\StyleCop.Analyzers.CodeFixes.dll" />
-    <Analyzer Include="..\packages\StyleCop.Analyzers.1.0.2\analyzers\dotnet\cs\StyleCop.Analyzers.dll" />
-  </ItemGroup>
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
-       Other similar extension points exist, see Microsoft.Common.targets.
-  <Target Name="BeforeBuild">
+
+  <!-- Surfaces the built assembly version to the Azure DevOps pipeline (azure-pipeline.yml's
+       SetVersion step reads $(assemblyVersion)) - same mechanism as the sibling repos. Gated to
+       $(TF_BUILD) (an env var Azure Pipelines itself sets, absent everywhere else) per PR review -
+       this used to emit an Azure Pipelines logging command unconditionally, including for local
+       builds and consumer builds that merely reference this project, which is meaningless noise
+       outside actual CI. -->
+  <Target Name="RetrieveAssemblyVersion" AfterTargets="Build" Condition="'$(TF_BUILD)' == 'true'">
+    <GetAssemblyIdentity AssemblyFiles="$(TargetPath)">
+      <Output TaskParameter="Assemblies" ItemName="Assembly" />
+    </GetAssemblyIdentity>
+    <Message Condition="%(Assembly.Version) != ''" Text="##vso[task.setvariable variable=assemblyVersion]%(Assembly.Version)" Importance="high" />
   </Target>
-  <Target Name="AfterBuild">
-  </Target>
-  -->
+
+  <!-- No AssemblyInfo.cs / GenerateAssemblyInfo=false - matches the Booker.ApplicationInsights.Core.WebApi.csproj
+       and Booker.Core.Infrastructure.Libraries.WebApi.csproj precedent: rely on the SDK's default
+       assembly-info generation from the <Version>/<AssemblyVersion>/<FileVersion>/<Company>/<Title>
+       properties above, plus the <InternalsVisibleTo> items below (same mechanism both sibling
+       projects use for their own Tests/SmokeTests projects). ComVisible/Guid (COM-interop, no COM
+       scenario applies here) are still dropped; CLSCompliant is restored, conditionally, in
+       Properties/AssemblyInfo.CLSCompliant.cs per PR review. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tests" />
+    <InternalsVisibleTo Include="Tests.NetCore.SmokeTests" />
+  </ItemGroup>
+
+  <!-- Portable core dependency - available on all 3 TFMs. -->
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="12.0.1" />
+    <PackageReference Include="Humanizer.Core" Version="2.6.2" />
+  </ItemGroup>
+
+  <!-- net47: classic ASP.NET Web API 2. Core = System.Web.Http.dll (filters/formatters/attributes);
+       Client = System.Net.Http.Formatting.dll (MediaTypeFormatter/ObjectContent). Both net45-only -
+       Microsoft.AspNet.WebApi.Client's netstandard2.0 asset is missing members the net47 pipeline
+       needs (e.g. HttpRequestMessage.GetQueryNameValuePairs() - confirmed by an actual CS1061 build
+       failure), so it stays net47-only; the portable core uses its own Uri-based query parser
+       (UriExtensions.cs) instead of depending on this package at all. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net47'">
+    <PackageReference Include="Microsoft.AspNet.WebApi.Core" Version="5.2.7" />
+    <PackageReference Include="Microsoft.AspNet.WebApi.Client" Version="5.2.7" />
+  </ItemGroup>
+
+  <!-- net10.0: ASP.NET Core MVC abstractions come from the shared framework. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Exclude the classic Web API 2 pipeline (net47-only - see Standard-2.0-Migration-Plan.md
+       Section 3.2/7.1: System.Web.Http has no netstandard2.0/net10.0 build) from the other two
+       TFMs. net10.0 gets its own re-implementation of this pipeline under Http/NetCore/ instead
+       (JsonApiProcessor's logic is folded into the new formatter/middleware rather than 1:1
+       twinned - see Section 3.2 correction #3). -->
+  <ItemGroup Condition="'$(TargetFramework)' != 'net47'">
+    <Compile Remove="Http\AllowsQueryAttribute.cs" />
+    <Compile Remove="Http\DisableDefaultIncludedAttribute.cs" />
+    <Compile Remove="Http\HandlesQueryAttribute.cs" />
+    <Compile Remove="Http\HttpConfigExtensions.cs" />
+    <Compile Remove="Http\JsonApiAttribute.cs" />
+    <Compile Remove="Http\JsonApiMediaTypeFormatter.cs" />
+    <Compile Remove="Http\JsonApiProcessor.cs" />
+    <Compile Remove="Http\JsonApiQueryValueProvider.cs" />
+    <Compile Remove="Http\JsonApiQueryValueProviderFactory.cs" />
+    <Compile Remove="Http\PaginatedAttribute.cs" />
+    <Compile Remove="Http\PreprocessingDelegatingHandler.cs" />
+    <Compile Remove="Http\QueryContextUtils.cs" />
+    <Compile Remove="Http\ReturnsResourceAttribute.cs" />
+  </ItemGroup>
+
+  <!-- The net10.0 ASP.NET Core re-implementation of the pipeline above - only compiled for net10.0. -->
+  <ItemGroup Condition="'$(TargetFramework)' != 'net10.0'">
+    <Compile Remove="Http\NetCore\**\*.cs" />
+  </ItemGroup>
+
 </Project>

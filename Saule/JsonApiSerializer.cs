@@ -1,7 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+#if NETFRAMEWORK
 using System.Web.Http;
+#elif NET10_0
+using Microsoft.AspNetCore.Mvc;
+#endif
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Saule.Http;
@@ -116,6 +120,7 @@ namespace Saule
                 return new List<ApiError>() { new ApiError(exception) };
             }
 
+#if NETFRAMEWORK
             var httpError = @object as HttpError;
             if (httpError != null)
             {
@@ -127,6 +132,19 @@ namespace Saule
             {
                 return httpErrorList.Select(error => new ApiError(error)).ToList();
             }
+#elif NET10_0
+            var problemDetails = @object as ProblemDetails;
+            if (problemDetails != null)
+            {
+                return new List<ApiError>() { new ApiError(problemDetails) };
+            }
+
+            var problemDetailsList = @object as IEnumerable<ProblemDetails>;
+            if (problemDetailsList != null)
+            {
+                return problemDetailsList.Select(error => new ApiError(error)).ToList();
+            }
+#endif
 
             return null;
         }
