@@ -209,10 +209,22 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Saule\Saule.csproj">
-      <Project>{ad43ede3-88c9-47ee-bae1-c14c80f1ace4}</Project>
-      <Name>Saule</Name>
-    </ProjectReference>
+    <!-- PR review finding: this was a <ProjectReference> to Saule.csproj, but Saule.csproj is now
+         SDK-style and multi-targeted (net47;netstandard2.0;net10.0) - even just evaluating it (to
+         resolve which per-TFM output this net47-only project should reference) requires MSBuild to
+         resolve "Microsoft.NET.Sdk" first, which fails outright under the CI agent's legacy VS2022
+         MSBuild once global.json pins the .NET 10 SDK (that SDK requires MSBuild >= 18.0, which VS2022
+         does not ship). Saule.csproj is already built for all 3 TFMs by an earlier, separate
+         `dotnet build` pipeline step, so this references the already-built net47 output directly -
+         the same way every one of Saule's own net47 dependencies (Newtonsoft.Json,
+         Microsoft.AspNet.WebApi.Core, etc.) is already referenced below, rather than restored via a
+         live project reference. A local full-solution build must build Saule.csproj (e.g.
+         `dotnet build Saule\Saule.csproj`) before Tests.csproj, since there is no longer an MSBuild
+         dependency edge enforcing that order. -->
+    <Reference Include="Saule">
+      <HintPath>..\Saule\bin\$(Configuration)\net47\Saule.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Properties\Resources.resx">

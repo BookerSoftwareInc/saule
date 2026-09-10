@@ -90,12 +90,18 @@ jobs:
     # clean agent, Tests.csproj's EnsureNuGetPackageBuildImports/hard <Error> still fires because the
     # packages aren't on disk yet at evaluation time, even though Restore later succeeds. A genuinely
     # separate restore step, in its own process, is required so evaluation happens again afterward.
+    # PR review finding: pointing this at Tests.csproj (or the .sln) makes nuget.exe's MSBuild-based
+    # restore walk Tests.csproj's <ProjectReference> to Saule.csproj to discover the dependency graph
+    # - which means evaluating Saule.csproj too, hitting the exact same "MSBuild >= 18.0 required"
+    # SDK-resolution failure as VSBuild@1 did, just from a different task. Pointing directly at the
+    # packages.config file instead uses NuGet's older, simpler restore mode, which reads the XML
+    # directly and never evaluates any MSBuild project at all.
     - task: NuGetCommand@2
       name: RestorePackagesConfig
       displayName: 'Restore packages.config packages'
       inputs:
         command: 'restore'
-        restoreSolution: 'Tests/Tests.csproj'
+        restoreSolution: 'Tests/packages.config'
 
     # PR review finding: VSBuild@1 always shells out to the Visual Studio installation's own bundled
     # MSBuild.exe - a different binary from the one the .NET SDK itself ships/relies on. Confirmed by
