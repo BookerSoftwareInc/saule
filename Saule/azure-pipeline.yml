@@ -95,20 +95,43 @@ jobs:
       displayName: 'Restore packages.config packages'
       inputs:
         command: 'restore'
-        restoreSolution: 'Saule.sln'
+        restoreSolution: 'Tests/Tests.csproj'
 
-    # Builds the whole solution (Saule.csproj's 3 TFMs, the legacy packages.config-based
-    # Tests.csproj, and the SDK-style Tests.NetCore.SmokeTests.csproj) via full MSBuild in one
-    # step - the same command this migration was actually verified with locally
-    # ("MSBuild.exe Saule.sln -t:Restore" then "-t:Build"). A DotNetCoreCLI@2-only restore/build
-    # (as the original single-project pipeline this was cloned from used) cannot restore or build
-    # Tests.csproj at all, since `dotnet restore`/`dotnet build` don't handle packages.config-style
-    # legacy projects - confirmed as a real gap in this pipeline before this fix, not assumed.
-    - task: VSBuild@1
-      name: RestoreAndBuild
-      displayName: 'Restore and build solution'
+    # PR review finding: VSBuild@1 always shells out to the Visual Studio installation's own bundled
+    # MSBuild.exe - a different binary from the one the .NET SDK itself ships/relies on. Confirmed by
+    # a real CI failure: this agent's VS2022 MSBuild is 17.14, but .NET SDK 10.0.401 (pinned by
+    # global.json) requires MSBuild >= 18.0 just to resolve "Microsoft.NET.Sdk"/"Microsoft.NET.Sdk.Web"
+    # - so VSBuild@1 can never build Saule.csproj or Tests.NetCore.SmokeTests.csproj once global.json
+    # pins .NET 10, no matter what UseDotNet@2 installs (that only puts `dotnet` on PATH; it doesn't
+    # change which msbuild.exe VSBuild@1 invokes). `dotnet build` instead uses the MSBuild bundled
+    # with whichever SDK UseDotNet@2 just installed, which is guaranteed to satisfy that SDK's own
+    # version requirement. VSBuild@1 (further below) is kept only for the legacy, non-SDK-style
+    # Tests.csproj, which never goes through SDK resolution and builds fine under either engine.
+    - task: DotNetCoreCLI@2
+      name: BuildSaule
+      displayName: 'Restore and build Saule (all TFMs)'
       inputs:
-        solution: 'Saule.sln'
+        command: 'build'
+        projects: 'Saule/Saule.csproj'
+        arguments: '--configuration Release'
+
+    - task: DotNetCoreCLI@2
+      name: BuildNetCoreSmokeTests
+      displayName: 'Restore and build net10.0 smoke tests'
+      inputs:
+        command: 'build'
+        projects: 'Tests.NetCore.SmokeTests/Tests.NetCore.SmokeTests.csproj'
+        arguments: '--configuration Release'
+
+    # Only the legacy (non-SDK), packages.config-based Tests.csproj needs full MSBuild.exe - it
+    # can't be restored/built via `dotnet build` at all (packages.config isn't understood by the
+    # SDK-style restore), but it also never triggers SDK resolution, so VS2022's older MSBuild
+    # engine builds it without issue.
+    - task: VSBuild@1
+      name: RestoreAndBuildLegacyTests
+      displayName: 'Restore and build legacy net47 Tests.csproj'
+      inputs:
+        solution: 'Tests/Tests.csproj'
         msbuildArgs: '/t:Restore,Build /p:Configuration=Release'
         platform: 'Any CPU'
         configuration: 'Release'
