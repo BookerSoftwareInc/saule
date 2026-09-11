@@ -90,18 +90,24 @@ jobs:
     # clean agent, Tests.csproj's EnsureNuGetPackageBuildImports/hard <Error> still fires because the
     # packages aren't on disk yet at evaluation time, even though Restore later succeeds. A genuinely
     # separate restore step, in its own process, is required so evaluation happens again afterward.
-    # PR review finding: pointing this at Tests.csproj (or the .sln) makes nuget.exe's MSBuild-based
-    # restore walk Tests.csproj's <ProjectReference> to Saule.csproj to discover the dependency graph
-    # - which means evaluating Saule.csproj too, hitting the exact same "MSBuild >= 18.0 required"
-    # SDK-resolution failure as VSBuild@1 did, just from a different task. Pointing directly at the
-    # packages.config file instead uses NuGet's older, simpler restore mode, which reads the XML
-    # directly and never evaluates any MSBuild project at all.
-    - task: NuGetCommand@2
+    # PR review finding: pointing NuGetCommand@2 at Tests.csproj (or the .sln) makes nuget.exe's
+    # MSBuild-based restore walk Tests.csproj's <ProjectReference> (now a plain <Reference> - see
+    # Tests/Tests.csproj) or otherwise evaluate every project listed in the .sln to build the
+    # dependency graph - which means evaluating Saule.csproj too, hitting the exact same
+    # "MSBuild >= 18.0 required" SDK-resolution failure as VSBuild@1 did, just from a different task.
+    # Pointing NuGetCommand@2 directly at the packages.config file avoids the MSBuild-based graph walk,
+    # but then nuget.exe has no .sln to infer the packages folder from and fails with "Cannot
+    # determine the packages folder... specify -PackagesDirectory or -SolutionDirectory" - and
+    # NuGetCommand@2's restore command has no input for either flag. A direct nuget.exe invocation
+    # (CmdLine@2) can pass -PackagesDirectory explicitly, matching Tests.csproj's own `..\packages\...`
+    # HintPath convention (repo root/packages), and - like the packages.config-only restore above -
+    # never touches any MSBuild project at all.
+    - task: CmdLine@2
       name: RestorePackagesConfig
       displayName: 'Restore packages.config packages'
       inputs:
-        command: 'restore'
-        restoreSolution: 'Tests/packages.config'
+        script: 'nuget restore Tests\packages.config -PackagesDirectory packages -NonInteractive'
+        workingDirectory: '$(Build.SourcesDirectory)'
 
     # PR review finding: VSBuild@1 always shells out to the Visual Studio installation's own bundled
     # MSBuild.exe - a different binary from the one the .NET SDK itself ships/relies on. Confirmed by
