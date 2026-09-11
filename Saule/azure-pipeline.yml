@@ -90,12 +90,24 @@ jobs:
     # clean agent, Tests.csproj's EnsureNuGetPackageBuildImports/hard <Error> still fires because the
     # packages aren't on disk yet at evaluation time, even though Restore later succeeds. A genuinely
     # separate restore step, in its own process, is required so evaluation happens again afterward.
-    - task: NuGetCommand@2
+    # PR review finding: pointing NuGetCommand@2 at Tests.csproj (or the .sln) makes nuget.exe's
+    # MSBuild-based restore walk Tests.csproj's <ProjectReference> (now a plain <Reference> - see
+    # Tests/Tests.csproj) or otherwise evaluate every project listed in the .sln to build the
+    # dependency graph - which means evaluating Saule.csproj too, hitting the exact same
+    # "MSBuild >= 18.0 required" SDK-resolution failure as VSBuild@1 did, just from a different task.
+    # Pointing NuGetCommand@2 directly at the packages.config file avoids the MSBuild-based graph walk,
+    # but then nuget.exe has no .sln to infer the packages folder from and fails with "Cannot
+    # determine the packages folder... specify -PackagesDirectory or -SolutionDirectory" - and
+    # NuGetCommand@2's restore command has no input for either flag. A direct nuget.exe invocation
+    # (CmdLine@2) can pass -PackagesDirectory explicitly, matching Tests.csproj's own `..\packages\...`
+    # HintPath convention (repo root/packages), and - like the packages.config-only restore above -
+    # never touches any MSBuild project at all.
+    - task: CmdLine@2
       name: RestorePackagesConfig
       displayName: 'Restore packages.config packages'
       inputs:
-        command: 'restore'
-        restoreSolution: 'Tests/Tests.csproj'
+        script: 'nuget restore Tests\packages.config -PackagesDirectory packages -NonInteractive'
+        workingDirectory: '$(Build.SourcesDirectory)'
 
     # PR review finding: VSBuild@1 always shells out to the Visual Studio installation's own bundled
     # MSBuild.exe - a different binary from the one the .NET SDK itself ships/relies on. Confirmed by
@@ -123,18 +135,22 @@ jobs:
         projects: 'Tests.NetCore.SmokeTests/Tests.NetCore.SmokeTests.csproj'
         arguments: '--configuration Release'
 
-    # Only the legacy (non-SDK), packages.config-based Tests.csproj needs full MSBuild.exe - it
-    # can't be restored/built via `dotnet build` at all (packages.config isn't understood by the
-    # SDK-style restore), but it also never triggers SDK resolution, so VS2022's older MSBuild
-    # engine builds it without issue.
-    - task: VSBuild@1
+    # Tests.csproj is legacy (non-SDK) but keeps its normal <ProjectReference> to Saule.csproj (no
+    # source change needed there) - `dotnet msbuild` uses the same MSBuild engine bundled with the
+    # pinned .NET 10 SDK that BuildSaule (above) already uses successfully, which resolves
+    # "Microsoft.NET.Sdk" fine when evaluating that reference. PR review finding: VSBuild@1 (VS2022's
+    # own bundled MSBuild.exe, a different and older binary - see the BuildSaule comment above) cannot
+    # evaluate Tests.csproj at all once it references Saule.csproj, because resolving the
+    # ProjectReference means evaluating Saule.csproj too. `dotnet msbuild` sidesteps that entirely by
+    # using the version-matched engine throughout. `-p:Platform=AnyCPU` (no space) matches
+    # Tests.csproj's own '$(Configuration)|$(Platform)' == 'Release|AnyCPU' condition; "Any CPU" (with
+    # a space, VSBuild@1's convention) would leave OutputPath unset and fail the build outright.
+    - task: CmdLine@2
       name: RestoreAndBuildLegacyTests
       displayName: 'Restore and build legacy net47 Tests.csproj'
       inputs:
-        solution: 'Tests/Tests.csproj'
-        msbuildArgs: '/t:Restore,Build /p:Configuration=Release'
-        platform: 'Any CPU'
-        configuration: 'Release'
+        script: 'dotnet msbuild Tests\Tests.csproj -t:Restore -t:Build -p:Configuration=Release -p:Platform=AnyCPU'
+        workingDirectory: '$(Build.SourcesDirectory)'
 
     - task: PowerShell@2
       name: SetVersion
@@ -156,14 +172,13 @@ jobs:
                     [string]$packageVersion = $($Matches.1) + '.' + $($Matches.2) + '.' + $($Matches.3);
                     if (-not [System.Convert]::ToBoolean("$(isReleaseBranch)"))
                     {
-                        # PR review finding (#3): Saule.csproj's <Version> is a hand-bumped literal, so
-                        # every build on the same version produced the exact same "-beta" package
-                        # version - combined with allowPackageConflicts:true on the Push step below,
-                        # every build after the first silently pushed nothing new behind a green
-                        # checkmark. Appending the build ID makes every beta package unique without
-                        # requiring a csproj edit for every commit; a stable (non-beta) release still
-                        # requires bumping <Version> before merging, same as before.
-                        $packageVersion = $packageVersion + '-beta.$(Build.BuildId)';
+                        # Plain "-beta" suffix (no build-ID suffix) - beta package version tracks
+                        # Saule.csproj's <Version> directly, same as a stable release. Bump <Version>
+                        # there whenever a new package (beta or stable) actually needs to be published;
+                        # pushing the same version twice is expected to be a no-op (see
+                        # allowPackageConflicts on the Push step below), not something the pipeline
+                        # should paper over with a synthetic per-build suffix.
+                        $packageVersion = $packageVersion + '-beta';
                     }
 
                     Write-Host "##vso[build.updatebuildnumber]$packageVersion"

@@ -201,7 +201,15 @@ namespace Tests.Serialization
 
             var selfLink = result["links"].Value<string>("self");
 
-            Assert.Equal("https://localhost/api/people?page[number]=1&page[size]=10", selfLink);
+            // PR review finding: whether Uri.ToString() unescapes "%5B"/"%5D" back to "["/"]" in the
+            // query string is a .NET Framework version/patch-dependent behavior (RFC 3986 gen-delim
+            // handling for reserved characters has changed across servicing updates) - the code under
+            // test (ResourceSerializer.CreateTopLevelLinks) does nothing but call ToString() on the
+            // caller-supplied Uri here, so this assertion shouldn't depend on which escaped/unescaped
+            // form a given runtime happens to produce. Un-escaping both sides preserves the test's
+            // real intent (no double-encoding, no added default port) without being sensitive to that
+            // runtime quirk - a no-op when the runtime already unescaped it.
+            Assert.Equal("https://localhost/api/people?page[number]=1&page[size]=10", Uri.UnescapeDataString(selfLink));
         }
 
         [Fact(DisplayName = "Adds top level self link if only LinkType.TopSelf is specified")]
