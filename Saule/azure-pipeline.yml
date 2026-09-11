@@ -50,10 +50,14 @@ variables:
   # checks the real release-branch pattern (Saule's actual convention, confirmed via git branch -a -
   # release-v1.4/1.5/1.6); isPublishBranch is booker-saule (this repo's real default/main branch,
   # per gitStatus) OR a release branch.
+  # PR review finding: a merge to develop built and tested but the Pack/Push/SetVersion steps'
+  # condition never included it, so develop silently produced no artifact at all - not even a beta
+  # one. develop should publish a beta package on every merge (isReleaseBranch stays false for it,
+  # so the "-beta" suffix below still applies) the same way booker-saule does.
   - name: isReleaseBranch
     value: $[startsWith(variables['Build.SourceBranch'], 'refs/heads/release-v')]
   - name: isPublishBranch
-    value: $[or(eq(variables['Build.SourceBranch'], 'refs/heads/booker-saule'), eq(variables.isReleaseBranch, true))]
+    value: $[or(eq(variables['Build.SourceBranch'], 'refs/heads/booker-saule'), eq(variables['Build.SourceBranch'], 'refs/heads/develop'), eq(variables.isReleaseBranch, true))]
 
 parameters:
   - name: publishPackage
