@@ -135,25 +135,22 @@ jobs:
         projects: 'Tests.NetCore.SmokeTests/Tests.NetCore.SmokeTests.csproj'
         arguments: '--configuration Release'
 
-    # Only the legacy (non-SDK), packages.config-based Tests.csproj needs full MSBuild.exe - it
-    # can't be restored/built via `dotnet build` at all (packages.config isn't understood by the
-    # SDK-style restore), but it also never triggers SDK resolution, so VS2022's older MSBuild
-    # engine builds it without issue.
-    # PR review finding: VSBuild@1's `platform` input ("Any CPU", with a space) used to work only
-    # because it targeted Saule.sln, whose SolutionConfigurationPlatforms/ProjectConfigurationPlatforms
-    # mapping translates the solution-level "Any CPU" name to each project's own platform name.
-    # Pointed directly at Tests.csproj (no .sln in between), that translation never happens - "Any
-    # CPU" is passed straight through as /p:Platform, which never matches Tests.csproj's own
-    # '$(Configuration)|$(Platform)' == 'Release|AnyCPU' (no space) condition, so OutputPath is never
-    # set and the build fails outright. "AnyCPU" (no space) is the project's actual platform name.
-    - task: VSBuild@1
+    # Tests.csproj is legacy (non-SDK) but keeps its normal <ProjectReference> to Saule.csproj (no
+    # source change needed there) - `dotnet msbuild` uses the same MSBuild engine bundled with the
+    # pinned .NET 10 SDK that BuildSaule (above) already uses successfully, which resolves
+    # "Microsoft.NET.Sdk" fine when evaluating that reference. PR review finding: VSBuild@1 (VS2022's
+    # own bundled MSBuild.exe, a different and older binary - see the BuildSaule comment above) cannot
+    # evaluate Tests.csproj at all once it references Saule.csproj, because resolving the
+    # ProjectReference means evaluating Saule.csproj too. `dotnet msbuild` sidesteps that entirely by
+    # using the version-matched engine throughout. `-p:Platform=AnyCPU` (no space) matches
+    # Tests.csproj's own '$(Configuration)|$(Platform)' == 'Release|AnyCPU' condition; "Any CPU" (with
+    # a space, VSBuild@1's convention) would leave OutputPath unset and fail the build outright.
+    - task: CmdLine@2
       name: RestoreAndBuildLegacyTests
       displayName: 'Restore and build legacy net47 Tests.csproj'
       inputs:
-        solution: 'Tests/Tests.csproj'
-        msbuildArgs: '/t:Restore,Build /p:Configuration=Release /p:Platform=AnyCPU'
-        platform: 'AnyCPU'
-        configuration: 'Release'
+        script: 'dotnet msbuild Tests\Tests.csproj -t:Restore -t:Build -p:Configuration=Release -p:Platform=AnyCPU'
+        workingDirectory: '$(Build.SourcesDirectory)'
 
     - task: PowerShell@2
       name: SetVersion
