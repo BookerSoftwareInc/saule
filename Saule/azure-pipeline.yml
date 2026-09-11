@@ -172,14 +172,13 @@ jobs:
                     [string]$packageVersion = $($Matches.1) + '.' + $($Matches.2) + '.' + $($Matches.3);
                     if (-not [System.Convert]::ToBoolean("$(isReleaseBranch)"))
                     {
-                        # PR review finding (#3): Saule.csproj's <Version> is a hand-bumped literal, so
-                        # every build on the same version produced the exact same "-beta" package
-                        # version - combined with allowPackageConflicts:true on the Push step below,
-                        # every build after the first silently pushed nothing new behind a green
-                        # checkmark. Appending the build ID makes every beta package unique without
-                        # requiring a csproj edit for every commit; a stable (non-beta) release still
-                        # requires bumping <Version> before merging, same as before.
-                        $packageVersion = $packageVersion + '-beta.$(Build.BuildId)';
+                        # Plain "-beta" suffix (no build-ID suffix) - beta package version tracks
+                        # Saule.csproj's <Version> directly, same as a stable release. Bump <Version>
+                        # there whenever a new package (beta or stable) actually needs to be published;
+                        # pushing the same version twice is expected to be a no-op (see
+                        # allowPackageConflicts on the Push step below), not something the pipeline
+                        # should paper over with a synthetic per-build suffix.
+                        $packageVersion = $packageVersion + '-beta';
                     }
 
                     Write-Host "##vso[build.updatebuildnumber]$packageVersion"
