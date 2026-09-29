@@ -56,6 +56,9 @@ variables:
   # so the "-beta" suffix below still applies) the same way booker-saule does.
   - name: isReleaseBranch
     value: $[startsWith(variables['Build.SourceBranch'], 'refs/heads/release-v')]
+  # Stable (non-beta) versions are produced from booker-saule (main) and release-v*; develop stays beta.
+  - name: isStableBranch
+    value: $[or(eq(variables['Build.SourceBranch'], 'refs/heads/booker-saule'), eq(variables.isReleaseBranch, true))]
   - name: isPublishBranch
     value: $[or(eq(variables['Build.SourceBranch'], 'refs/heads/booker-saule'), eq(variables['Build.SourceBranch'], 'refs/heads/develop'), eq(variables.isReleaseBranch, true))]
 
@@ -174,7 +177,7 @@ jobs:
                 if ($Env:assemblyVersion -match '(.*)[.](.*)[.](.*)[.](.*)')
                 {
                     [string]$packageVersion = $($Matches.1) + '.' + $($Matches.2) + '.' + $($Matches.3);
-                    if (-not [System.Convert]::ToBoolean("$(isReleaseBranch)"))
+                    if (-not [System.Convert]::ToBoolean("$(isStableBranch)"))
                     {
                         # Plain "-beta" suffix (no build-ID suffix) - beta package version tracks
                         # Saule.csproj's <Version> directly, same as a stable release. Bump <Version>
