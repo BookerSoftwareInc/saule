@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Web.Http.Controllers;
 using System.Web.Http.Filters;
+using Saule.Resources;
 
 namespace Saule.Http
 {
@@ -53,13 +54,8 @@ namespace Saule.Http
                 actionContext.Response = new HttpResponseMessage(HttpStatusCode.UnsupportedMediaType);
             }
 
-            AddResourceToRequest(actionContext.Request, Resource);
+            ResourceDescriptor.AttachToRequest(actionContext.Request, Resource);
             base.OnActionExecuting(actionContext);
-        }
-
-        internal static void AddResourceToRequest(HttpRequestMessage request, ApiResource resource)
-        {
-            request.Properties.Add(Constants.PropertyNames.ResourceDescriptor, resource);
         }
     }
 }

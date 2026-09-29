@@ -42,5 +42,15 @@ namespace Saule.Http
         /// Gets or sets the factory that creates request specific ApiResourceProvider
         /// </summary>
         public IApiResourceProviderFactory ApiResourceProviderFactory { get; set; } = new DefaultApiResourceProviderFactory();
+
+        /// <summary>
+        /// Gets or sets a value indicating whether an unhandled exception's full details (message,
+        /// stack trace) are included in the JSON:API error response's <c>detail</c> member. Defaults
+        /// to <c>false</c> - the response only ever gets a generic message unless a consumer
+        /// explicitly opts in (e.g. for their own non-production environments). Deliberately not
+        /// tied to <c>IHostEnvironment.IsDevelopment()</c>: that reads an ambient, easy-to-misconfigure
+        /// host setting, whereas this is a plain, testable setting the consumer controls directly.
+        /// </summary>
+        public bool IncludeExceptionDetailInErrors { get; set; } = false;
     }
 }

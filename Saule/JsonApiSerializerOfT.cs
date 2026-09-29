@@ -91,8 +91,8 @@ namespace Saule
             }
 
             var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-            ReturnsResourceAttribute.AddResourceToRequest(request, new T());
-            var queryContext = GetQueryContext(request.GetQueryNameValuePairs());
+            ResourceDescriptor.AttachToRequest(request, new T());
+            var queryContext = GetQueryContext(requestUri.ParseQueryNameValuePairs());
 
             _serializer.QueryContext = queryContext;
             var apiResourceProvider = config.ApiResourceProviderFactory.Create(request);
