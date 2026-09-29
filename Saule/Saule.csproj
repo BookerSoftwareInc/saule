@@ -17,14 +17,11 @@
     <RootNamespace>Saule</RootNamespace>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors Condition="'$(Configuration)'=='Release'">true</TreatWarningsAsErrors>
-    <!-- Newtonsoft.Json 12.0.1 has a known high-severity advisory (NU1903, GHSA-5crp-9r3c-p9vr) -
-         pre-existing on this branch already, not touched by this migration (bumping it is an
-         independent decision with its own consumer-compatibility check, same as the
-         Booker.ApplicationInsights migration's 12.0.1->13.0.3 bump - out of this session's decided
-         scope). Suppressed here only so Release builds aren't blocked by a pre-existing finding;
-         flagged as a follow-up action item, not silently fixed. NU1900 (failure to reach the internal
-         feed's vulnerability-data endpoint) is suppressed alongside it - it's about feed availability
-         in the current environment, not an actual finding about this code, and is intermittent. -->
+    <!-- Newtonsoft.Json was bumped 12.0.1 -> 13.0.3 (2.0.2) to clear the NU1903 advisory
+         (GHSA-5crp-9r3c-p9vr). Consumers must move their Web.config Newtonsoft.Json binding redirect
+         to 13.0.0.0 (see Standard-2.0-Migration-Plan.md, Action item 14). NU1903/NU1900 stay in
+         WarningsNotAsErrors as a safety net: NU1900 (failure to reach the internal feed's
+         vulnerability-data endpoint) is about feed availability, not this code, and is intermittent. -->
     <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1903;NU1900</WarningsNotAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
@@ -65,9 +62,9 @@
          Bumped to 2.0.1 (2026-09-11, patch) so this branch's CI/CD pipeline fixes publish under a
          version that hasn't already been pushed to the feed - bump this again before merging any
          future change that should actually publish a new package. -->
-    <Version>2.0.1</Version>
-    <AssemblyVersion>2.0.1.0</AssemblyVersion>
-    <FileVersion>2.0.1.0</FileVersion>
+    <Version>2.0.2</Version>
+    <AssemblyVersion>2.0.2.0</AssemblyVersion>
+    <FileVersion>2.0.2.0</FileVersion>
   </PropertyGroup>
 
   <!-- Surfaces the built assembly version to the Azure DevOps pipeline (azure-pipeline.yml's
@@ -97,7 +94,7 @@
 
   <!-- Portable core dependency - available on all 3 TFMs. -->
   <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="12.0.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Humanizer.Core" Version="2.6.2" />
   </ItemGroup>
 
